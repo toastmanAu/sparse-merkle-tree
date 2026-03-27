@@ -339,25 +339,27 @@ void smt_state_normalize(smt_state_t *state) {
 
 /* SMT */
 
-int _smt_get_bit(const uint8_t *data, int offset) {
+#define _SMT_ALWAYS_INLINE static inline __attribute__((always_inline))
+
+_SMT_ALWAYS_INLINE int _smt_get_bit(const uint8_t *data, int offset) {
   int byte_pos = offset / 8;
   int bit_pos = offset % 8;
   return ((data[byte_pos] >> bit_pos) & 1) != 0;
 }
 
-void _smt_set_bit(uint8_t *data, int offset) {
+_SMT_ALWAYS_INLINE void _smt_set_bit(uint8_t *data, int offset) {
   int byte_pos = offset / 8;
   int bit_pos = offset % 8;
   data[byte_pos] |= 1 << bit_pos;
 }
 
-void _smt_clear_bit(uint8_t *data, int offset) {
+_SMT_ALWAYS_INLINE void _smt_clear_bit(uint8_t *data, int offset) {
   int byte_pos = offset / 8;
   int bit_pos = offset % 8;
   data[byte_pos] &= (uint8_t)(~(1 << bit_pos));
 }
 
-void _smt_copy_bits(uint8_t *source, int first_kept_bit) {
+_SMT_ALWAYS_INLINE void _smt_copy_bits(uint8_t *source, int first_kept_bit) {
   int first_byte = first_kept_bit / 8;
   _smt_fast_memset(source, 0, first_byte);
   int bit_offset = first_kept_bit % 8;
@@ -367,7 +369,7 @@ void _smt_copy_bits(uint8_t *source, int first_kept_bit) {
   }
 }
 
-void _smt_parent_path(uint8_t *key, uint8_t height) {
+_SMT_ALWAYS_INLINE void _smt_parent_path(uint8_t *key, uint8_t height) {
   if (height == 255) {
     _smt_fast_memset(key, 0, 32);
   } else {
@@ -375,7 +377,7 @@ void _smt_parent_path(uint8_t *key, uint8_t height) {
   }
 }
 
-int _smt_is_zero_hash(const uint8_t *value) {
+_SMT_ALWAYS_INLINE int _smt_is_zero_hash(const uint8_t *value) {
   const uint64_t *v64 = (const uint64_t *)value;
   return (v64[0] | v64[1] | v64[2] | v64[3]) == 0;
 }
@@ -404,12 +406,12 @@ typedef struct {
   uint8_t zero_count;
 } _smt_merge_value_t;
 
-void _smt_merge_value_zero(_smt_merge_value_t *out) {
+_SMT_ALWAYS_INLINE void _smt_merge_value_zero(_smt_merge_value_t *out) {
   out->t = _SMT_MERGE_VALUE_ZERO;
   _smt_fast_memset(out->value, 0, SMT_VALUE_BYTES);
 }
 
-void _smt_merge_value_from_h256(const uint8_t *v, _smt_merge_value_t *out) {
+_SMT_ALWAYS_INLINE void _smt_merge_value_from_h256(const uint8_t *v, _smt_merge_value_t *out) {
   if (_smt_is_zero_hash(v)) {
     _smt_merge_value_zero(out);
   } else {
@@ -418,7 +420,7 @@ void _smt_merge_value_from_h256(const uint8_t *v, _smt_merge_value_t *out) {
   }
 }
 
-int _smt_merge_value_is_zero(const _smt_merge_value_t *v) {
+_SMT_ALWAYS_INLINE int _smt_merge_value_is_zero(const _smt_merge_value_t *v) {
   return v->t == _SMT_MERGE_VALUE_ZERO;
 }
 
@@ -447,7 +449,7 @@ static void _smt_blake2b_init_fast(blake2b_state *S) {
 }
 
 /* Hash base node into a H256 */
-void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
+static inline void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
                          const uint8_t *base_value,
                          uint8_t out[SMT_VALUE_BYTES]) {
   blake2b_state blake2b_ctx;
@@ -459,7 +461,7 @@ void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
   blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
 }
 
-void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
+static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
   if (v->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
     blake2b_state blake2b_ctx;
     _smt_blake2b_init_fast(&blake2b_ctx);
@@ -474,7 +476,7 @@ void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
   }
 }
 
-void _smt_merge_with_zero(uint8_t height, const uint8_t *node_key,
+_SMT_ALWAYS_INLINE void _smt_merge_with_zero(uint8_t height, const uint8_t *node_key,
                           const _smt_merge_value_t *v, int set_bit,
                           _smt_merge_value_t *out) {
   if (v->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
@@ -497,7 +499,7 @@ void _smt_merge_with_zero(uint8_t height, const uint8_t *node_key,
 }
 
 /* Notice that output might collide with one of lhs, or rhs */
-void _smt_merge(uint8_t height, const uint8_t *node_key,
+_SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
                 const _smt_merge_value_t *lhs,
                 const _smt_merge_value_t *rhs,
                 _smt_merge_value_t *out) {
