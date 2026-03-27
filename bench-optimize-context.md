@@ -29,6 +29,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 
 ## What Works
 1. **Precomputed blake2b init state** (exp 1): Saved 253 K cycles (3.6%). Memcpy of precomputed state replaces ckb_blake2b_init() calls. Confirms blake2b init overhead was significant.
+2. **64-bit word comparisons in `_smt_is_zero_hash`** (exp 3): Saved 4 K cycles (0.1%). Small but simplifies code.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates into contiguous buffers** (exp 2): 6772 vs 6741 (+31 K cycles). The extra memcpy cost to build the batch buffer outweighs the saved per-update overhead. blake2b_update is already efficient for small inputs since data < 128 bytes never triggers compression — it just copies into the internal buffer.
@@ -53,3 +54,4 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
+| memory-layout | 1 | 1 | exp 3 - 64-bit zero hash check |
