@@ -705,18 +705,29 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         uint8_t parent_key[SMT_KEY_BYTES];
         _smt_fast_memcpy(parent_key, key, SMT_KEY_BYTES);
         uint16_t height_u16 = base_height;
-        for (uint16_t idx = 0; idx < zero_count; idx++) {
+        /* First iteration: full parent_path to set up initial state */
+        if (zero_count > 0) {
+          height_u16 = base_height;
+          if (height_u16 > 255) {
+            return ERROR_INVALID_PROOF;
+          }
+          _smt_parent_path(parent_key, (uint8_t)height_u16);
+          if (_smt_get_bit(key, (uint8_t)height_u16)) {
+            _smt_merge((uint8_t)height_u16, parent_key, &SMT_ZERO, value, value);
+          } else {
+            _smt_merge((uint8_t)height_u16, parent_key, value, &SMT_ZERO, value);
+          }
+        }
+        /* Subsequent iterations: incremental — just clear one more bit */
+        for (uint16_t idx = 1; idx < zero_count; idx++) {
           height_u16 = base_height + idx;
           if (height_u16 > 255) {
             return ERROR_INVALID_PROOF;
           }
-          // the following code can be omitted:
-          // _smt_fast_memcpy(parent_key, key, SMT_KEY_BYTES);
-          // A key's parent's parent can be calculated from parent.
-          // it's not needed to do it from scratch.
-          // Make sure height_u16 is in increase order
-          _smt_parent_path(parent_key, (uint8_t)height_u16);
-          // push value
+          /* Incremental: parent_path(h) clears bits 0..h, keeping h+1..255.
+           * Since bits 0..h-1 were already cleared by the previous iteration,
+           * we only need to clear bit h. */
+          _smt_clear_bit(parent_key, (uint8_t)height_u16);
           if (_smt_get_bit(key, (uint8_t)height_u16)) {
             _smt_merge((uint8_t)height_u16, parent_key, &SMT_ZERO, value, value);
           } else {
