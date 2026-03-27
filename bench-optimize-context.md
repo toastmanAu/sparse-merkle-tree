@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 4202 K cycles (baseline: 6994, total improvement: 39.9%)
+## Current Best: 3607 K cycles (baseline: 6994, total improvement: 48.4%)
 
 ## Architecture Notes
 
@@ -37,31 +37,33 @@ This is the core verification function. It processes a proof (byte stream of opc
 5. **Incremental parent_path in 0x4F loop** (exp 7): Saved 704 K cycles (13.9%)!
 6. **Eliminate redundant parent_key in 0x50/0x51/0x48** (exp 8): Saved 124 K cycles (2.9%).
 7. **`__builtin_expect` for unlikely error paths** (exp 9): Saved 16 K cycles (0.4%). Small but real.
+8. **Specialized 32-byte memcpy** (exp 11): Saved 595 K cycles (14.2%)! Using 4x uint64_t loads/stores instead of generic _smt_fast_memcpy for the very common 32-byte copy case.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
 2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): +217 K cycles.
+3. **Force-inline blake2b_update/blake2b_final** (exp 10): No effect (0 cycles change). Compiler already inlines them.
 
 ## Ideas Backlog
 
 ### High Impact (algorithmic / memory)
-1. **Inline blake2b_update/blake2b_final**: Force-inline the blake2b functions — could yield a win similar to exp 6.
-2. **Specialized 32-byte memcpy**: Use 4x uint64_t loads/stores for the very common 32-byte copy.
-3. **Reduce blake2b calls**: In `_smt_merge_with_zero`, when converting a VALUE to MERGE_WITH_ZERO for the first time, it calls `_smt_hash_base_node` which does a full blake2b hash. Can this be deferred?
+1. **Apply _smt_memcpy32 to more call sites**: The blake2b_init_fast still uses _smt_fast_memcpy for sizeof(blake2b_state) — not 32 bytes though. Also _smt_merge_with_zero copies sizeof(_smt_merge_value_t) which is ~97 bytes.
+2. **Specialized memset32**: Similar to _smt_memcpy32 but for zeroing — use 4x uint64_t zero stores for the common 32-byte memset(0) case in _smt_merge_value_zero and _smt_merge_with_zero.
+3. **Reduce blake2b calls**: In `_smt_merge_with_zero`, when converting a VALUE to MERGE_WITH_ZERO, it calls `_smt_hash_base_node` doing a full blake2b hash. Can this be deferred?
 
-### Medium Impact (compiler hints)
-4. **`__builtin_expect` for unlikely error paths**: Branch prediction hints.
-5. **Optimize `_smt_merge` zero-check fast path**: The inlined `_smt_merge` now checks lhs_zero/rhs_zero — since most calls have one zero operand, optimize the branch ordering.
+### Medium Impact
+4. **Optimize merge_with_zero struct copy**: When `out != v` and extending MergeWithZero, we copy the full 97-byte struct. Use _smt_memcpy32 for the value and zero_bits fields separately.
+5. **Specialized 32-byte memcmp**: Replace memcmp in 0x48 with 64-bit word comparison like _smt_is_zero_hash.
 
-### Lower Impact (memory/micro)
+### Lower Impact
 6. **Reduce `SMT_STACK_SIZE`**: 257 might be larger than needed for 40 leaves.
-7. **Optimize 0x4F memcpy at end**: The final `_smt_fast_memcpy(key, parent_key, 32)` could be eliminated if we work on key directly (tricky since get_bit needs original).
+7. **Avoid the proof[proof_index] copy**: In the 0x51 sibling copy from proof, data may be unaligned — check if the RISC-V target handles unaligned loads efficiently.
 
 ## Approach Categories Tried
 | Category | Attempts | Kept | Last Tried |
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 1 | 1 | exp 3 - 64-bit zero hash check |
+| memory-layout | 2 | 2 | exp 11 - specialized 32-byte memcpy (huge win) |
 | algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
-| compiler-hint | 2 | 2 | exp 9 - __builtin_expect (0.4% win) |
+| compiler-hint | 3 | 2 | exp 10 - inline blake2b (no effect, discarded) |
