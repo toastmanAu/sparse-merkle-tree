@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 3607 K cycles (baseline: 6994, total improvement: 48.4%)
+## Current Best: 3600 K cycles (baseline: 6994, total improvement: 48.5%)
 
 ## Architecture Notes
 
@@ -37,12 +37,14 @@ This is the core verification function. It processes a proof (byte stream of opc
 5. **Incremental parent_path in 0x4F loop** (exp 7): Saved 704 K cycles (13.9%)!
 6. **Eliminate redundant parent_key in 0x50/0x51/0x48** (exp 8): Saved 124 K cycles (2.9%).
 7. **`__builtin_expect` for unlikely error paths** (exp 9): Saved 16 K cycles (0.4%). Small but real.
-8. **Specialized 32-byte memcpy** (exp 11): Saved 595 K cycles (14.2%)! Using 4x uint64_t loads/stores instead of generic _smt_fast_memcpy for the very common 32-byte copy case.
+8. **Specialized 32-byte memcpy** (exp 11): Saved 595 K cycles (14.2%)!
+9. **Specialized 32-byte memcmp** (exp 13): Saved 7 K cycles (0.2%). Small win with uint64_t XOR comparisons.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
 2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): +217 K cycles.
-3. **Force-inline blake2b_update/blake2b_final** (exp 10): No effect (0 cycles change). Compiler already inlines them.
+3. **Force-inline blake2b_update/blake2b_final** (exp 10): No effect. Compiler already inlines them.
+4. **Specialized 32-byte memset-zero** (exp 12): +37 K cycles. The existing _smt_fast_memset is efficient for n<=32.
 
 ## Ideas Backlog
 
@@ -64,6 +66,6 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 2 | 2 | exp 11 - specialized 32-byte memcpy (huge win) |
+| memory-layout | 4 | 3 | exp 13 - specialized memcmp (0.2% win), exp 12 memset regressed |
 | algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
 | compiler-hint | 3 | 2 | exp 10 - inline blake2b (no effect, discarded) |
