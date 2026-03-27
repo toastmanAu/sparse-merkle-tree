@@ -1,0 +1,18 @@
+[benchmark]
+command = "make test SMT_COUNT=131072 SMT_LEAVES=40"
+workdir = "src/nostd-runner"
+metric_pattern = "verify\\(\\) costs: (\\d+) K cycles"
+metric_name = "verify_k_cycles"
+direction = "lower"
+timeout_seconds = 300
+
+[scope]
+editable = ["c/"]
+readonly = ["benches/", "src/nostd-runner/", "src/ckb_smt.c", "src/ckb_smt.rs"]
+branch_prefix = "bench-optimize"
+
+[experiment]
+tag = "mar27"
+max_consecutive_fails = 3
+baseline_runs = 3
+variance_threshold_pct = 0.5
