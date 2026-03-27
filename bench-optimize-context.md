@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 3072 K cycles (baseline: 6994, total improvement: 56.1%)
+## Current Best: 2744 K cycles (baseline: 6994, total improvement: 60.8%)
 
 ## Architecture Notes
 
@@ -42,6 +42,9 @@ This is the core verification function. It processes a proof (byte stream of opc
 10. **Optimize blake2b init - copy only h[] zero rest** (exp 14): Saved 324 K cycles (9.0%).
 11. **Skip buf[] zeroing in blake2b_init_fast** (exp 15): Saved 81 K cycles (2.5%). buf is filled by update and padded by final — initial zeroing is redundant.
 12. **Remove secure_zero_memory in blake2b_final** (exp 17): Saved 123 K cycles (3.8%). volatile memset ptr prevented compiler optimization — unnecessary for non-keyed SMT.
+13. **Direct buf write in _smt_hash_base_node** (exp 21): Saved 20 K cycles (0.7%). Write 65 bytes directly to blake2b buf instead of 3 blake2b_update calls.
+14. **Direct buf write in _smt_merge_value_hash** (exp 22): Saved 58 K cycles (1.9%). Write 66 bytes directly to buf.
+15. **Direct buf write in _smt_merge + hash output to buf** (exp 23): Saved 250 K cycles (8.4%)! Write 98 bytes directly to buf AND have _smt_merge_value_hash write output directly to target buf position.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -49,27 +52,30 @@ This is the core verification function. It processes a proof (byte stream of opc
 3. **Force-inline blake2b_update/blake2b_final** (exp 10): No effect. Compiler already inlines them.
 4. **Specialized 32-byte memset-zero** (exp 12): +37 K cycles. The existing _smt_fast_memset is efficient for n<=32.
 5. **Field-by-field struct copy in _smt_merge_with_zero** (exp 16): No effect. Path not hit frequently enough.
+6. **Skip temp buffer in blake2b_final** (exp 18): No effect. Compiler already optimized after secure_zero_memory removal.
+7. **Define NATIVE_LITTLE_ENDIAN for RISC-V** (exp 19): No effect. Compiler already optimizes byte-shift pattern.
+8. **Direct _smt_merge_with_zero in 0x4F** (exp 20): +1.1%. Inlined _smt_merge with const SMT_ZERO was better optimized by compiler.
 
 ## Ideas Backlog
 
 ### High Impact (algorithmic / memory)
-1. **Apply _smt_memcpy32 to more call sites**: The blake2b_init_fast still uses _smt_fast_memcpy for sizeof(blake2b_state) — not 32 bytes though. Also _smt_merge_with_zero copies sizeof(_smt_merge_value_t) which is ~97 bytes.
-2. **Specialized memset32**: Similar to _smt_memcpy32 but for zeroing — use 4x uint64_t zero stores for the common 32-byte memset(0) case in _smt_merge_value_zero and _smt_merge_with_zero.
-3. **Reduce blake2b calls**: In `_smt_merge_with_zero`, when converting a VALUE to MERGE_WITH_ZERO, it calls `_smt_hash_base_node` doing a full blake2b hash. Can this be deferred?
+1. **Direct buf write technique for remaining blake2b sites**: The pattern of writing directly to S->buf and setting buflen has proven very effective. Look for any remaining blake2b_update call sites.
+2. **Reduce blake2b calls**: In `_smt_merge_with_zero`, when converting a VALUE to MERGE_WITH_ZERO, it calls `_smt_hash_base_node` doing a full blake2b hash. Can this be deferred?
+3. **Optimize blake2b_compress itself**: The G macro, ROUND macro — any RISC-V specific optimizations?
 
 ### Medium Impact
-4. **Optimize merge_with_zero struct copy**: When `out != v` and extending MergeWithZero, we copy the full 97-byte struct. Use _smt_memcpy32 for the value and zero_bits fields separately.
-5. **Specialized 32-byte memcmp**: Replace memcmp in 0x48 with 64-bit word comparison like _smt_is_zero_hash.
+4. **Optimize _smt_copy_bits _smt_fast_memset**: In `_smt_copy_bits`, `_smt_fast_memset(source, 0, first_byte)` is called with variable small sizes. Could be optimized for common cases.
+5. **Reduce stack memory**: `stack_values[257]` × 97 bytes = ~25 KB on stack. Consider if smaller stack helps cache behavior.
 
 ### Lower Impact
 6. **Reduce `SMT_STACK_SIZE`**: 257 might be larger than needed for 40 leaves.
-7. **Avoid the proof[proof_index] copy**: In the 0x51 sibling copy from proof, data may be unaligned — check if the RISC-V target handles unaligned loads efficiently.
+7. **Optimize proof parsing**: Reduce branching in the switch statement.
 
 ## Approach Categories Tried
 | Category | Attempts | Kept | Last Tried |
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 7 | 5 | exp 17 - remove secure_zero_memory (3.8% win) |
-| algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
-| compiler-hint | 3 | 2 | exp 10 - inline blake2b (no effect, discarded) |
+| memory-layout | 9 | 5 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
+| algorithm | 7 | 6 | exp 23 - direct buf write in _smt_merge (8.4% win!) |
+| compiler-hint | 4 | 2 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
