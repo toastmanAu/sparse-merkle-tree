@@ -34,6 +34,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 
 ## What Doesn't Work
 1. **Batching small blake2b updates into contiguous buffers** (exp 2): 6772 vs 6741 (+31 K cycles). The extra memcpy cost to build the batch buffer outweighs the saved per-update overhead. blake2b_update is already efficient for small inputs since data < 128 bytes never triggers compression — it just copies into the internal buffer.
+2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): 6327 vs 6110 (+217 K cycles). Loop-based word zeroing with branches was slower than `_smt_fast_memset`. The compiler/fast_memset already optimizes small memsets well.
 
 ## Ideas Backlog
 
@@ -56,4 +57,4 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 1 | 1 | exp 3 - 64-bit zero hash check |
-| algorithm | 1 | 1 | exp 4 - single byte mask in _smt_copy_bits |
+| algorithm | 2 | 1 | exp 5 - 64-bit word zeroing regressed |
