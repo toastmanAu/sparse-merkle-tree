@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 2051 K cycles (baseline: 6994, total improvement: 70.7%)
+## Current Best: 2044 K cycles (baseline: 6994, total improvement: 70.8%)
 
 ## Architecture Notes
 
@@ -48,6 +48,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 16. **Custom _smt_blake2b_final** (exp 24): Saved 290 K cycles (10.6%)! Skip error checks, temp buffer, store64 loop + memcpy. Write h[] directly to output. Also skip outlen/last_node init.
 17. **Fused single-block blake2b hash** (exp 27): Saved 32 K cycles (1.3%). Eliminated blake2b_state struct entirely — h[] passed directly to working vector, t/f constants baked in, output extracted from local variables without struct field reads.
 18. **Zero only partial word + hash_block zeros m[]** (exp 28): Saved 371 K cycles (15.3%)!! Instead of _smt_fast_memset(30-63 bytes) to zero-pad full block, callers zero only the partial word (6-7 bytes), and hash function sets remaining m[] words to 0 directly. Massive win because _smt_fast_memset has significant branching overhead even for medium sizes.
+19. **Skip zero check after blake2b hash** (exp 30): Saved 7 K cycles (0.3%). Blake2b hash output is cryptographically never zero — skip _smt_is_zero_hash check in _smt_merge normal path.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -60,6 +61,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 8. **Direct _smt_merge_with_zero in 0x4F** (exp 20): +1.1%. Inlined _smt_merge with const SMT_ZERO was better optimized by compiler.
 9. **Force-inline blake2b_compress** (exp 25): No effect. Compiler already inlines it.
 10. **Zero buf in init, skip padding in final** (exp 26): +1.5%. The 128-byte memset in init costs more than variable padding in final (30-63 bytes).
+11. **Direct byte stores for partial word zeroing** (exp 29): No effect. Compiler already optimizes 6-7 byte _smt_fast_memset.
 
 ## Ideas Backlog
 
@@ -82,5 +84,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 10 | 5 | exp 26 - zero buf in init, skip padding in final (regressed +1.5%) |
-| algorithm | 10 | 9 | exp 28 - zero partial word + m[] zeroing (15.3% win!!) |
+| algorithm | 12 | 10 | exp 30 - skip zero check after hash (0.3% win) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
