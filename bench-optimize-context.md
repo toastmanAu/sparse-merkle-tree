@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 2042 K cycles (baseline: 6994, total improvement: 70.8%)
+## Current Best: 1996 K cycles (baseline: 6994, total improvement: 71.5%)
 
 ## Architecture Notes
 
@@ -50,6 +50,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 18. **Zero only partial word + hash_block zeros m[]** (exp 28): Saved 371 K cycles (15.3%)!! Instead of _smt_fast_memset(30-63 bytes) to zero-pad full block, callers zero only the partial word (6-7 bytes), and hash function sets remaining m[] words to 0 directly. Massive win because _smt_fast_memset has significant branching overhead even for medium sizes.
 19. **Skip zero check after blake2b hash** (exp 30): Saved 7 K cycles (0.3%). Blake2b hash output is cryptographically never zero — skip _smt_is_zero_hash check in _smt_merge normal path.
 20. **Hash directly into out->value** (exp 31): Saved 2 K cycles (0.1%). Eliminated intermediate data[32] buffer and memcpy in _smt_merge normal path.
+21. **Short-circuit 0x4F loop** (exp 34): Saved 46 K cycles (2.3%). After first merge with zero, value is either ZERO or MERGE_WITH_ZERO. Skip _smt_merge dispatch overhead for remaining iterations — directly set bits and increment count.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -87,5 +88,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 11 | 5 | exp 33 - specialized 66-byte copy (regressed +0.2%) |
-| algorithm | 13 | 11 | exp 32 - inlined sigma constants (no effect) |
+| algorithm | 14 | 12 | exp 34 - short-circuit 0x4F loop (kept, -2.3%) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
