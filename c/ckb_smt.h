@@ -475,7 +475,8 @@ _SMT_ALWAYS_INLINE void _smt_blake2b_init_fast(blake2b_state *S) {
   dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
   S->t[0] = 0; S->t[1] = 0;
   S->f[0] = 0; S->f[1] = 0;
-  _smt_fast_memset(S->buf, 0, BLAKE2B_BLOCKBYTES);
+  /* buf[] zeroing skipped: blake2b_update fills from 0, and blake2b_final
+   * pads unused bytes with zeros before compress. Initial zeroing is redundant. */
   S->buflen = 0;
   S->outlen = SMT_VALUE_BYTES;
   S->last_node = 0;

@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 3600 K cycles (baseline: 6994, total improvement: 48.5%)
+## Current Best: 3276 K cycles (baseline: 6994, total improvement: 53.2%)
 
 ## Architecture Notes
 
