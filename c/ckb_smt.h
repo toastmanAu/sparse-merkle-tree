@@ -374,12 +374,8 @@ void _smt_parent_path(uint8_t *key, uint8_t height) {
 }
 
 int _smt_is_zero_hash(const uint8_t *value) {
-  for (int i = 0; i < 32; i++) {
-    if (value[i] != 0) {
-      return 0;
-    }
-  }
-  return 1;
+  const uint64_t *v64 = (const uint64_t *)value;
+  return (v64[0] | v64[1] | v64[2] | v64[3]) == 0;
 }
 
 #define _SMT_MERGE_VALUE_ZERO 0
