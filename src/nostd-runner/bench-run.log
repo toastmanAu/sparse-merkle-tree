@@ -7,7 +7,7 @@ proof=$(cargo run --features=rand,trie --manifest-path=/home/quake/workspace/spa
 ckb-debugger --bin /home/quake/workspace/sparse-merkle-tree/src/nostd-runner/target/riscv64imac-unknown-none-elf/release/smt-nostd-runner -- $proof
 Script log: [[32mINFO[0m  src/main.rs:19] smt-nostd-runner, log enabled
 Script log: [[32mINFO[0m  src/entry.rs:56] Input summary => proof length: 17646 bytes, pairs count: 40
-Script log: [[32mINFO[0m  src/entry.rs:69] SMT verify() costs: 3276 K cycles
+Script log: [[32mINFO[0m  src/entry.rs:69] SMT verify() costs: 3052 K cycles
 Script log: [[32mINFO[0m  src/entry.rs:72] SMT verification succeeded.
 Run result: 0
-All cycles: 7965874(7.6M)
+All cycles: 7742088(7.4M)

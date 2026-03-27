@@ -503,10 +503,12 @@ static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *o
     blake2b_state blake2b_ctx;
     _smt_blake2b_init_fast(&blake2b_ctx);
 
-    blake2b_update(&blake2b_ctx, &_SMT_MERGE_ZEROS, 1);
-    blake2b_update(&blake2b_ctx, v->value, SMT_VALUE_BYTES);
-    blake2b_update(&blake2b_ctx, v->zero_bits, SMT_KEY_BYTES);
-    blake2b_update(&blake2b_ctx, &(v->zero_count), 1);
+    /* Write data directly to buf: _SMT_MERGE_ZEROS(1) + value(32) + zero_bits(32) + zero_count(1) = 66 bytes */
+    blake2b_ctx.buf[0] = _SMT_MERGE_ZEROS;
+    _smt_memcpy32(blake2b_ctx.buf + 1, v->value);
+    _smt_memcpy32(blake2b_ctx.buf + 33, v->zero_bits);
+    blake2b_ctx.buf[65] = v->zero_count;
+    blake2b_ctx.buflen = 66;
     blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
   } else {
     _smt_memcpy32(out, v->value);
