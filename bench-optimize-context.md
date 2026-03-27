@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 2744 K cycles (baseline: 6994, total improvement: 60.8%)
+## Current Best: 2454 K cycles (baseline: 6994, total improvement: 64.9%)
 
 ## Architecture Notes
 
@@ -45,6 +45,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 13. **Direct buf write in _smt_hash_base_node** (exp 21): Saved 20 K cycles (0.7%). Write 65 bytes directly to blake2b buf instead of 3 blake2b_update calls.
 14. **Direct buf write in _smt_merge_value_hash** (exp 22): Saved 58 K cycles (1.9%). Write 66 bytes directly to buf.
 15. **Direct buf write in _smt_merge + hash output to buf** (exp 23): Saved 250 K cycles (8.4%)! Write 98 bytes directly to buf AND have _smt_merge_value_hash write output directly to target buf position.
+16. **Custom _smt_blake2b_final** (exp 24): Saved 290 K cycles (10.6%)! Skip error checks, temp buffer, store64 loop + memcpy. Write h[] directly to output. Also skip outlen/last_node init.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -77,5 +78,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 9 | 5 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
-| algorithm | 7 | 6 | exp 23 - direct buf write in _smt_merge (8.4% win!) |
+| algorithm | 8 | 7 | exp 24 - custom blake2b_final (10.6% win!) |
 | compiler-hint | 4 | 2 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
