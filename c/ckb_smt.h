@@ -427,12 +427,33 @@ int _smt_merge_value_is_zero(const _smt_merge_value_t *v) {
 const uint8_t _SMT_MERGE_NORMAL = 1;
 const uint8_t _SMT_MERGE_ZEROS = 2;
 
+/*
+ * Precomputed blake2b_state for ckb_blake2b_init(S, 32).
+ * This avoids re-computing the param block and XOR'ing with IV on every hash.
+ * The state is: h[i] = blake2b_IV[i] ^ load64(P + i*8), where P is the
+ * ckb-default-hash param block (digest_length=32, fanout=1, depth=1,
+ * personal="ckb-default-hash").
+ */
+static int _smt_blake2b_precomputed_initialized = 0;
+static blake2b_state _smt_blake2b_precomputed;
+
+static void _smt_blake2b_ensure_precomputed(void) {
+  if (!_smt_blake2b_precomputed_initialized) {
+    ckb_blake2b_init(&_smt_blake2b_precomputed, SMT_VALUE_BYTES);
+    _smt_blake2b_precomputed_initialized = 1;
+  }
+}
+
+static void _smt_blake2b_init_fast(blake2b_state *S) {
+  _smt_fast_memcpy(S, &_smt_blake2b_precomputed, sizeof(blake2b_state));
+}
+
 /* Hash base node into a H256 */
 void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
                          const uint8_t *base_value,
                          uint8_t out[SMT_VALUE_BYTES]) {
   blake2b_state blake2b_ctx;
-  ckb_blake2b_init(&blake2b_ctx, SMT_VALUE_BYTES);
+  _smt_blake2b_init_fast(&blake2b_ctx);
 
   blake2b_update(&blake2b_ctx, &base_height, 1);
   blake2b_update(&blake2b_ctx, base_key, SMT_KEY_BYTES);
@@ -443,7 +464,7 @@ void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
 void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
   if (v->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
     blake2b_state blake2b_ctx;
-    ckb_blake2b_init(&blake2b_ctx, SMT_VALUE_BYTES);
+    _smt_blake2b_init_fast(&blake2b_ctx);
 
     blake2b_update(&blake2b_ctx, &_SMT_MERGE_ZEROS, 1);
     blake2b_update(&blake2b_ctx, v->value, SMT_VALUE_BYTES);
@@ -499,7 +520,7 @@ void _smt_merge(uint8_t height, const uint8_t *node_key,
   }
 
   blake2b_state blake2b_ctx;
-  ckb_blake2b_init(&blake2b_ctx, SMT_VALUE_BYTES);
+  _smt_blake2b_init_fast(&blake2b_ctx);
   uint8_t data[SMT_VALUE_BYTES];
 
   blake2b_update(&blake2b_ctx, &_SMT_MERGE_NORMAL, 1);
@@ -526,6 +547,7 @@ const _smt_merge_value_t SMT_ZERO = {
  */
 int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
                        const uint8_t *proof, uint32_t proof_length) {
+  _smt_blake2b_ensure_precomputed();
   uint8_t stack_keys[SMT_STACK_SIZE][SMT_KEY_BYTES];
   _smt_merge_value_t stack_values[SMT_STACK_SIZE];
   uint16_t stack_heights[SMT_STACK_SIZE] = {0};
