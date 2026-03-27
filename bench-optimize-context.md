@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 2422 K cycles (baseline: 6994, total improvement: 65.4%)
+## Current Best: 2051 K cycles (baseline: 6994, total improvement: 70.7%)
 
 ## Architecture Notes
 
@@ -47,6 +47,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 15. **Direct buf write in _smt_merge + hash output to buf** (exp 23): Saved 250 K cycles (8.4%)! Write 98 bytes directly to buf AND have _smt_merge_value_hash write output directly to target buf position.
 16. **Custom _smt_blake2b_final** (exp 24): Saved 290 K cycles (10.6%)! Skip error checks, temp buffer, store64 loop + memcpy. Write h[] directly to output. Also skip outlen/last_node init.
 17. **Fused single-block blake2b hash** (exp 27): Saved 32 K cycles (1.3%). Eliminated blake2b_state struct entirely — h[] passed directly to working vector, t/f constants baked in, output extracted from local variables without struct field reads.
+18. **Zero only partial word + hash_block zeros m[]** (exp 28): Saved 371 K cycles (15.3%)!! Instead of _smt_fast_memset(30-63 bytes) to zero-pad full block, callers zero only the partial word (6-7 bytes), and hash function sets remaining m[] words to 0 directly. Massive win because _smt_fast_memset has significant branching overhead even for medium sizes.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -81,5 +82,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 10 | 5 | exp 26 - zero buf in init, skip padding in final (regressed +1.5%) |
-| algorithm | 9 | 8 | exp 27 - fused single-block blake2b hash (1.3% win) |
+| algorithm | 10 | 9 | exp 28 - zero partial word + m[] zeroing (15.3% win!!) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
