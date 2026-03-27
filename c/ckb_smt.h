@@ -443,6 +443,13 @@ _SMT_ALWAYS_INLINE void _smt_merge_value_from_h256(const uint8_t *v, _smt_merge_
   }
 }
 
+/* Like _smt_merge_value_from_h256 but skips zero check — used after blake2b hash
+ * where the result is cryptographically guaranteed non-zero. */
+_SMT_ALWAYS_INLINE void _smt_merge_value_from_hash(const uint8_t *v, _smt_merge_value_t *out) {
+  out->t = _SMT_MERGE_VALUE_VALUE;
+  _smt_memcpy32(out->value, v);
+}
+
 _SMT_ALWAYS_INLINE int _smt_merge_value_is_zero(const _smt_merge_value_t *v) {
   return v->t == _SMT_MERGE_VALUE_ZERO;
 }
@@ -635,7 +642,7 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
 
   uint8_t data[SMT_VALUE_BYTES];
   _smt_blake2b_hash_block(block, 98, data);
-  _smt_merge_value_from_h256(data, out);
+  _smt_merge_value_from_hash(data, out);
 }
 
 const _smt_merge_value_t SMT_ZERO = {
