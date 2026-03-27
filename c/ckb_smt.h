@@ -489,9 +489,12 @@ static inline void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_
   blake2b_state blake2b_ctx;
   _smt_blake2b_init_fast(&blake2b_ctx);
 
-  blake2b_update(&blake2b_ctx, &base_height, 1);
-  blake2b_update(&blake2b_ctx, base_key, SMT_KEY_BYTES);
-  blake2b_update(&blake2b_ctx, base_value, SMT_VALUE_BYTES);
+  /* Write data directly to blake2b buf instead of 3 blake2b_update calls.
+   * Total = 1 + 32 + 32 = 65 bytes, always < 128, so no compress needed. */
+  blake2b_ctx.buf[0] = base_height;
+  _smt_memcpy32(blake2b_ctx.buf + 1, base_key);
+  _smt_memcpy32(blake2b_ctx.buf + 33, base_value);
+  blake2b_ctx.buflen = 65;
   blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
 }
 
