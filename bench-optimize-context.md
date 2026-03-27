@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 3276 K cycles (baseline: 6994, total improvement: 53.2%)
+## Current Best: 3195 K cycles (baseline: 6994, total improvement: 54.3%)
 
 ## Architecture Notes
 
@@ -39,6 +39,8 @@ This is the core verification function. It processes a proof (byte stream of opc
 7. **`__builtin_expect` for unlikely error paths** (exp 9): Saved 16 K cycles (0.4%). Small but real.
 8. **Specialized 32-byte memcpy** (exp 11): Saved 595 K cycles (14.2%)!
 9. **Specialized 32-byte memcmp** (exp 13): Saved 7 K cycles (0.2%). Small win with uint64_t XOR comparisons.
+10. **Optimize blake2b init - copy only h[] zero rest** (exp 14): Saved 324 K cycles (9.0%).
+11. **Skip buf[] zeroing in blake2b_init_fast** (exp 15): Saved 81 K cycles (2.5%). buf is filled by update and padded by final — initial zeroing is redundant.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -66,6 +68,6 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 4 | 3 | exp 13 - specialized memcmp (0.2% win), exp 12 memset regressed |
+| memory-layout | 5 | 4 | exp 15 - skip buf zeroing (2.5% win) |
 | algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
 | compiler-hint | 3 | 2 | exp 10 - inline blake2b (no effect, discarded) |
