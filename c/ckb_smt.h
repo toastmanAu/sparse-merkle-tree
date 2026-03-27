@@ -342,6 +342,19 @@ void smt_state_normalize(smt_state_t *state) {
 #define _SMT_ALWAYS_INLINE static inline __attribute__((always_inline))
 #define _SMT_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
+/* Specialized 32-byte copy using 64-bit loads/stores.
+ * Avoids all the alignment checks and branching in _smt_fast_memcpy.
+ * All SMT keys and values are 32 bytes and naturally aligned. */
+_SMT_ALWAYS_INLINE void _smt_memcpy32(void *dst, const void *src) {
+  typedef uint64_t __attribute__((__may_alias__)) u64;
+  u64 *d = (u64 *)dst;
+  const u64 *s = (const u64 *)src;
+  d[0] = s[0];
+  d[1] = s[1];
+  d[2] = s[2];
+  d[3] = s[3];
+}
+
 _SMT_ALWAYS_INLINE int _smt_get_bit(const uint8_t *data, int offset) {
   int byte_pos = offset / 8;
   int bit_pos = offset % 8;
@@ -417,7 +430,7 @@ _SMT_ALWAYS_INLINE void _smt_merge_value_from_h256(const uint8_t *v, _smt_merge_
     _smt_merge_value_zero(out);
   } else {
     out->t = _SMT_MERGE_VALUE_VALUE;
-    _smt_fast_memcpy(out->value, v, SMT_VALUE_BYTES);
+    _smt_memcpy32(out->value, v);
   }
 }
 
@@ -473,7 +486,7 @@ static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *o
     blake2b_update(&blake2b_ctx, &(v->zero_count), 1);
     blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
   } else {
-    _smt_fast_memcpy(out, v->value, SMT_VALUE_BYTES);
+    _smt_memcpy32(out, v->value);
   }
 }
 
@@ -566,8 +579,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         if (_SMT_UNLIKELY(leave_index >= pairs->len)) {
           return ERROR_INVALID_PROOF;
         }
-        _smt_fast_memcpy(stack_keys[stack_top], pairs->pairs[leave_index].key,
-               SMT_KEY_BYTES);
+        _smt_memcpy32(stack_keys[stack_top], pairs->pairs[leave_index].key);
         _smt_merge_value_from_h256(pairs->pairs[leave_index].value, &stack_values[stack_top]);
         stack_heights[stack_top] = 0;
         stack_top++;
@@ -614,8 +626,8 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         _smt_merge_value_t sibling_node;
         sibling_node.t = _SMT_MERGE_VALUE_MERGE_WITH_ZERO;
         sibling_node.zero_count = proof[proof_index];
-        _smt_fast_memcpy(&sibling_node.value, &proof[proof_index + 1], 32);
-        _smt_fast_memcpy(&sibling_node.zero_bits, &proof[proof_index + 33], 32);
+        _smt_memcpy32(&sibling_node.value, &proof[proof_index + 1]);
+        _smt_memcpy32(&sibling_node.zero_bits, &proof[proof_index + 33]);
         proof_index += 65;
         uint8_t *key = stack_keys[stack_top - 1];
         _smt_merge_value_t *value = &stack_values[stack_top - 1];
@@ -700,7 +712,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
           return ERROR_INVALID_PROOF;
         }
         uint8_t parent_key[SMT_KEY_BYTES];
-        _smt_fast_memcpy(parent_key, key, SMT_KEY_BYTES);
+        _smt_memcpy32(parent_key, key);
         uint16_t height_u16 = base_height;
         /* First iteration: full parent_path to set up initial state */
         if (zero_count > 0) {
@@ -732,7 +744,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
           }
         }
         // push key
-        _smt_fast_memcpy(key, parent_key, SMT_KEY_BYTES);
+        _smt_memcpy32(key, parent_key);
         // push height
         *base_height_ptr = height_u16 + 1;
       } break;
