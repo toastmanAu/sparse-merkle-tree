@@ -63,6 +63,8 @@ This is the core verification function. It processes a proof (byte stream of opc
 9. **Force-inline blake2b_compress** (exp 25): No effect. Compiler already inlines it.
 10. **Zero buf in init, skip padding in final** (exp 26): +1.5%. The 128-byte memset in init costs more than variable padding in final (30-63 bytes).
 11. **Direct byte stores for partial word zeroing** (exp 29): No effect. Compiler already optimizes 6-7 byte _smt_fast_memset.
+12. **Fully unrolled blake2b rounds with inlined sigma** (exp 32): No effect. Compiler already constant-folds sigma table lookups.
+13. **Specialized 66-byte copy for _smt_merge_value_t** (exp 33): +0.2%. _smt_fast_memcpy(66) is already efficient.
 
 ## Ideas Backlog
 
@@ -84,6 +86,6 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 10 | 5 | exp 26 - zero buf in init, skip padding in final (regressed +1.5%) |
-| algorithm | 13 | 11 | exp 31 - hash directly into out->value (0.1% win) |
+| memory-layout | 11 | 5 | exp 33 - specialized 66-byte copy (regressed +0.2%) |
+| algorithm | 13 | 11 | exp 32 - inlined sigma constants (no effect) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
