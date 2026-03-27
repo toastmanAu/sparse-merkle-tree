@@ -810,12 +810,14 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         uint8_t parent_key[SMT_KEY_BYTES];
         _smt_memcpy32(parent_key, key);
         uint16_t height_u16 = base_height;
+        /* Validate that the entire range of heights fits in [0, 255] */
+        uint16_t last_height = base_height + zero_count - 1;
+        if (_SMT_UNLIKELY(last_height > 255)) {
+          return ERROR_INVALID_PROOF;
+        }
         /* First iteration: full parent_path to set up initial state */
         if (zero_count > 0) {
           height_u16 = base_height;
-          if (_SMT_UNLIKELY(height_u16 > 255)) {
-            return ERROR_INVALID_PROOF;
-          }
           _smt_parent_path(parent_key, (uint8_t)height_u16);
           if (_smt_get_bit(key, (uint8_t)height_u16)) {
             _smt_merge((uint8_t)height_u16, parent_key, &SMT_ZERO, value, value);
@@ -824,44 +826,26 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
           }
         }
         /* After first merge with zero, value is either ZERO or MERGE_WITH_ZERO.
-         * If ZERO: all subsequent merges are zero+zero=zero, skip entirely.
-         * If MERGE_WITH_ZERO: subsequent iterations just set bits + increment count,
-         * bypassing _smt_merge dispatch overhead. */
-        if (zero_count > 1 && value->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
-          for (uint16_t idx = 1; idx < zero_count; idx++) {
-            height_u16 = base_height + idx;
-            if (_SMT_UNLIKELY(height_u16 > 255)) {
-              return ERROR_INVALID_PROOF;
-            }
-            _smt_clear_bit(parent_key, (uint8_t)height_u16);
-            if (_smt_get_bit(key, (uint8_t)height_u16)) {
-              _smt_set_bit(value->zero_bits, (uint8_t)height_u16);
-            }
-            value->zero_count++;
-          }
-        } else if (zero_count > 1 && value->t == _SMT_MERGE_VALUE_ZERO) {
-          /* zero + zero = zero for all remaining iterations, just update parent_key */
-          for (uint16_t idx = 1; idx < zero_count; idx++) {
-            height_u16 = base_height + idx;
-            if (_SMT_UNLIKELY(height_u16 > 255)) {
-              return ERROR_INVALID_PROOF;
-            }
-            _smt_clear_bit(parent_key, (uint8_t)height_u16);
-          }
-        } else {
-          /* Fallback for remaining iterations (should not normally reach here) */
-          for (uint16_t idx = 1; idx < zero_count; idx++) {
-            height_u16 = base_height + idx;
-            if (_SMT_UNLIKELY(height_u16 > 255)) {
-              return ERROR_INVALID_PROOF;
-            }
-            _smt_clear_bit(parent_key, (uint8_t)height_u16);
-            if (_smt_get_bit(key, (uint8_t)height_u16)) {
-              _smt_merge((uint8_t)height_u16, parent_key, &SMT_ZERO, value, value);
-            } else {
-              _smt_merge((uint8_t)height_u16, parent_key, value, &SMT_ZERO, value);
+         * Compute final parent_key directly instead of clearing bits one by one.
+         * parent_path(last_height) clears bits 0..last_height, which is the final state. */
+        if (zero_count > 1) {
+          /* Compute final parent_key directly: _smt_copy_bits clears bits 0..(last_height)
+           * which is equivalent to N-1 incremental _smt_clear_bit calls */
+          _smt_memcpy32(parent_key, key);
+          _smt_parent_path(parent_key, (uint8_t)last_height);
+          height_u16 = last_height;
+
+          if (value->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
+            /* Just set bits in zero_bits + increment count */
+            for (uint16_t idx = 1; idx < zero_count; idx++) {
+              uint16_t h = base_height + idx;
+              if (_smt_get_bit(key, (uint8_t)h)) {
+                _smt_set_bit(value->zero_bits, (uint8_t)h);
+              }
+              value->zero_count++;
             }
           }
+          /* If ZERO: nothing to do — zero + zero = zero, parent_key already computed */
         }
         // push key
         _smt_memcpy32(key, parent_key);
