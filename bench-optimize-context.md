@@ -56,6 +56,8 @@ This is the core verification function. It processes a proof (byte stream of opc
 6. **Skip temp buffer in blake2b_final** (exp 18): No effect. Compiler already optimized after secure_zero_memory removal.
 7. **Define NATIVE_LITTLE_ENDIAN for RISC-V** (exp 19): No effect. Compiler already optimizes byte-shift pattern.
 8. **Direct _smt_merge_with_zero in 0x4F** (exp 20): +1.1%. Inlined _smt_merge with const SMT_ZERO was better optimized by compiler.
+9. **Force-inline blake2b_compress** (exp 25): No effect. Compiler already inlines it.
+10. **Zero buf in init, skip padding in final** (exp 26): +1.5%. The 128-byte memset in init costs more than variable padding in final (30-63 bytes).
 
 ## Ideas Backlog
 
@@ -77,6 +79,6 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 9 | 5 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
+| memory-layout | 10 | 5 | exp 26 - zero buf in init, skip padding in final (regressed +1.5%) |
 | algorithm | 8 | 7 | exp 24 - custom blake2b_final (10.6% win!) |
-| compiler-hint | 4 | 2 | exp 19 - NATIVE_LITTLE_ENDIAN (no effect) |
+| compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
