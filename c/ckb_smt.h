@@ -501,10 +501,22 @@ _SMT_ALWAYS_INLINE void _smt_blake2b_hash_block(
     uint8_t out[SMT_VALUE_BYTES]) {
   typedef uint64_t __attribute__((__may_alias__)) u64;
 
-  /* Load message words from block */
+  /* Load message words from block. Only load words that contain data;
+   * zero-fill the rest. datalen is a compile-time constant at each call site
+   * so the compiler will eliminate the branches. */
   uint64_t _smt_m[16];
-  for (int i = 0; i < 16; ++i) {
+  int full_words = datalen / 8;  /* number of fully-filled 8-byte words */
+  int i;
+  for (i = 0; i < full_words; ++i) {
     _smt_m[i] = load64(block + i * 8);
+  }
+  /* Partial word: load remaining bytes, rest is implicitly zero from block padding.
+   * If datalen is exact multiple of 8, this loads the next full word (which is zero). */
+  if (full_words < 16) {
+    _smt_m[full_words] = load64(block + full_words * 8);
+    for (i = full_words + 1; i < 16; ++i) {
+      _smt_m[i] = 0;
+    }
   }
 
   /* Set up working vector v[16] directly from precomputed h[] and IV.
@@ -542,24 +554,25 @@ _SMT_ALWAYS_INLINE void _smt_blake2b_hash_block(
 static inline void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
                          const uint8_t *base_value,
                          uint8_t out[SMT_VALUE_BYTES]) {
-  /* Total = 1 + 32 + 32 = 65 bytes, pad rest with zeros */
+  /* Total = 1 + 32 + 32 = 65 bytes. Only zero-pad the partial word (bytes 65-71);
+   * _smt_blake2b_hash_block zeros remaining m[] words internally. */
   uint8_t block[BLAKE2B_BLOCKBYTES];
   block[0] = base_height;
   _smt_memcpy32(block + 1, base_key);
   _smt_memcpy32(block + 33, base_value);
-  _smt_fast_memset(block + 65, 0, BLAKE2B_BLOCKBYTES - 65);
+  _smt_fast_memset(block + 65, 0, 71 - 65 + 1);  /* zero bytes 65-71 (partial word) */
   _smt_blake2b_hash_block(block, 65, out);
 }
 
 static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
   if (v->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
-    /* Total = 1 + 32 + 32 + 1 = 66 bytes, pad rest with zeros */
+    /* Total = 1 + 32 + 32 + 1 = 66 bytes. Zero-pad partial word only (bytes 66-71). */
     uint8_t block[BLAKE2B_BLOCKBYTES];
     block[0] = _SMT_MERGE_ZEROS;
     _smt_memcpy32(block + 1, v->value);
     _smt_memcpy32(block + 33, v->zero_bits);
     block[65] = v->zero_count;
-    _smt_fast_memset(block + 66, 0, BLAKE2B_BLOCKBYTES - 66);
+    _smt_fast_memset(block + 66, 0, 71 - 66 + 1);  /* zero bytes 66-71 (partial word) */
     _smt_blake2b_hash_block(block, 66, out);
   } else {
     _smt_memcpy32(out, v->value);
@@ -610,14 +623,15 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
   }
 
   /* Write data directly to block: MERGE_NORMAL(1) + height(1) + node_key(32) + lhs_hash(32) + rhs_hash(32) = 98 bytes.
-   * _smt_merge_value_hash writes directly to target block positions. */
+   * _smt_merge_value_hash writes directly to target block positions.
+   * Zero-pad only partial word (bytes 98-103); hash_block zeros remaining m[] words. */
   uint8_t block[BLAKE2B_BLOCKBYTES];
   block[0] = _SMT_MERGE_NORMAL;
   block[1] = height;
   _smt_memcpy32(block + 2, node_key);
   _smt_merge_value_hash(lhs, block + 34);
   _smt_merge_value_hash(rhs, block + 66);
-  _smt_fast_memset(block + 98, 0, BLAKE2B_BLOCKBYTES - 98);
+  _smt_fast_memset(block + 98, 0, 103 - 98 + 1);  /* zero bytes 98-103 (partial word) */
 
   uint8_t data[SMT_VALUE_BYTES];
   _smt_blake2b_hash_block(block, 98, data);
