@@ -462,6 +462,38 @@ const uint8_t _SMT_MERGE_ZEROS = 2;
 static int _smt_blake2b_precomputed_initialized = 0;
 static uint64_t _smt_blake2b_precomputed_h[8];
 
+/* blake2b constants and helpers needed by _smt_blake2b_hash_block.
+ * Defined here so ckb_smt.h has no external dependencies. */
+_SMT_ALWAYS_INLINE uint64_t _smt_load64(const uint8_t *src) {
+  return ((uint64_t)src[0] << 0) | ((uint64_t)src[1] << 8) |
+         ((uint64_t)src[2] << 16) | ((uint64_t)src[3] << 24) |
+         ((uint64_t)src[4] << 32) | ((uint64_t)src[5] << 40) |
+         ((uint64_t)src[6] << 48) | ((uint64_t)src[7] << 56);
+}
+
+_SMT_ALWAYS_INLINE uint64_t _smt_rotr64(uint64_t w, unsigned c) {
+  return (w >> c) | (w << (64 - c));
+}
+
+static const uint64_t _smt_blake2b_IV[8] = {
+    0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL, 0x3c6ef372fe94f82bULL,
+    0xa54ff53a5f1d36f1ULL, 0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
+    0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL};
+
+static const uint8_t _smt_blake2b_sigma[12][16] = {
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+    {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3},
+    {11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4},
+    {7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8},
+    {9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13},
+    {2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9},
+    {12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11},
+    {13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10},
+    {6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5},
+    {10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0},
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+    {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3}};
+
 static void _smt_blake2b_ensure_precomputed(void) {
   if (!_smt_blake2b_precomputed_initialized) {
     blake2b_state tmp;
@@ -480,26 +512,26 @@ static void _smt_blake2b_ensure_precomputed(void) {
  * Precomputed h[] + known constants for t/f are baked in directly. */
 #define _SMT_G(r, i, a, b, c, d)                          \
   do {                                                     \
-    a = a + b + _smt_m[blake2b_sigma[r][2 * i + 0]];      \
-    d = rotr64(d ^ a, 32);                                 \
+    a = a + b + _smt_m[_smt_blake2b_sigma[r][2 * i + 0]]; \
+    d = _smt_rotr64(d ^ a, 32);                           \
     c = c + d;                                             \
-    b = rotr64(b ^ c, 24);                                 \
-    a = a + b + _smt_m[blake2b_sigma[r][2 * i + 1]];      \
-    d = rotr64(d ^ a, 16);                                 \
+    b = _smt_rotr64(b ^ c, 24);                           \
+    a = a + b + _smt_m[_smt_blake2b_sigma[r][2 * i + 1]]; \
+    d = _smt_rotr64(d ^ a, 16);                           \
     c = c + d;                                             \
-    b = rotr64(b ^ c, 63);                                 \
+    b = _smt_rotr64(b ^ c, 63);                           \
   } while (0)
 
 #define _SMT_ROUND(r)                                \
   do {                                               \
-    _SMT_G(r, 0, v[0], v[4], v[8], v[12]);           \
-    _SMT_G(r, 1, v[1], v[5], v[9], v[13]);           \
-    _SMT_G(r, 2, v[2], v[6], v[10], v[14]);          \
-    _SMT_G(r, 3, v[3], v[7], v[11], v[15]);          \
-    _SMT_G(r, 4, v[0], v[5], v[10], v[15]);          \
-    _SMT_G(r, 5, v[1], v[6], v[11], v[12]);          \
-    _SMT_G(r, 6, v[2], v[7], v[8], v[13]);           \
-    _SMT_G(r, 7, v[3], v[4], v[9], v[14]);           \
+    _SMT_G(r, 0, _smt_v[0], _smt_v[4], _smt_v[8], _smt_v[12]);           \
+    _SMT_G(r, 1, _smt_v[1], _smt_v[5], _smt_v[9], _smt_v[13]);           \
+    _SMT_G(r, 2, _smt_v[2], _smt_v[6], _smt_v[10], _smt_v[14]);          \
+    _SMT_G(r, 3, _smt_v[3], _smt_v[7], _smt_v[11], _smt_v[15]);          \
+    _SMT_G(r, 4, _smt_v[0], _smt_v[5], _smt_v[10], _smt_v[15]);          \
+    _SMT_G(r, 5, _smt_v[1], _smt_v[6], _smt_v[11], _smt_v[12]);          \
+    _SMT_G(r, 6, _smt_v[2], _smt_v[7], _smt_v[8], _smt_v[13]);           \
+    _SMT_G(r, 7, _smt_v[3], _smt_v[4], _smt_v[9], _smt_v[14]);           \
   } while (0)
 
 _SMT_ALWAYS_INLINE void _smt_blake2b_hash_block(
@@ -508,50 +540,117 @@ _SMT_ALWAYS_INLINE void _smt_blake2b_hash_block(
     uint8_t out[SMT_VALUE_BYTES]) {
   typedef uint64_t __attribute__((__may_alias__)) u64;
 
-  /* Load message words from block. Only load words that contain data;
-   * zero-fill the rest. datalen is a compile-time constant at each call site
-   * so the compiler will eliminate the branches. */
   uint64_t _smt_m[16];
-  int full_words = datalen / 8;  /* number of fully-filled 8-byte words */
-  int i;
-  for (i = 0; i < full_words; ++i) {
-    _smt_m[i] = load64(block + i * 8);
-  }
-  /* Partial word: load remaining bytes, rest is implicitly zero from block padding.
-   * If datalen is exact multiple of 8, this loads the next full word (which is zero). */
-  if (full_words < 16) {
-    _smt_m[full_words] = load64(block + full_words * 8);
-    for (i = full_words + 1; i < 16; ++i) {
-      _smt_m[i] = 0;
-    }
-  }
-
-  /* Set up working vector v[16] directly from precomputed h[] and IV.
-   * No blake2b_state struct needed. */
-  uint64_t v[16];
+  uint64_t _smt_v[16];
   const uint64_t *h = _smt_blake2b_precomputed_h;
-  v[0] = h[0]; v[1] = h[1]; v[2] = h[2]; v[3] = h[3];
-  v[4] = h[4]; v[5] = h[5]; v[6] = h[6]; v[7] = h[7];
-  v[8]  = blake2b_IV[0];
-  v[9]  = blake2b_IV[1];
-  v[10] = blake2b_IV[2];
-  v[11] = blake2b_IV[3];
-  v[12] = blake2b_IV[4] ^ datalen;  /* t[0] = datalen */
-  v[13] = blake2b_IV[5];            /* t[1] = 0 */
-  v[14] = blake2b_IV[6] ^ (uint64_t)-1;  /* f[0] = -1 (last block) */
-  v[15] = blake2b_IV[7];            /* f[1] = 0 (no last_node) */
 
-  /* 12 rounds of mixing */
-  _SMT_ROUND(0);  _SMT_ROUND(1);  _SMT_ROUND(2);  _SMT_ROUND(3);
-  _SMT_ROUND(4);  _SMT_ROUND(5);  _SMT_ROUND(6);  _SMT_ROUND(7);
-  _SMT_ROUND(8);  _SMT_ROUND(9);  _SMT_ROUND(10); _SMT_ROUND(11);
-
-  /* Extract first 32 bytes (4 uint64) directly to output */
-  u64 *o = (u64 *)out;
-  o[0] = h[0] ^ v[0] ^ v[8];
-  o[1] = h[1] ^ v[1] ^ v[9];
-  o[2] = h[2] ^ v[2] ^ v[10];
-  o[3] = h[3] ^ v[3] ^ v[11];
+  /* datalen is always 65, 66, or 98 at call sites.
+   * Load only bytes that were initialized (rest are zero from block padding).
+   * Use _smt_load64 for all loads to properly handle byte extraction. */
+  if (datalen == 65) {
+    /* 1 + 32 + 32 = 65 bytes */
+    _smt_m[0] = _smt_load64(block + 0);
+    _smt_m[1] = _smt_load64(block + 8);
+    _smt_m[2] = _smt_load64(block + 16);
+    _smt_m[3] = _smt_load64(block + 24);
+    _smt_m[4] = _smt_load64(block + 32);
+    _smt_m[5] = _smt_load64(block + 40);
+    _smt_m[6] = _smt_load64(block + 48);
+    _smt_m[7] = _smt_load64(block + 56);
+    /* block[64] is last initialized byte (partial word).
+     * Bytes 65-71 are zeroed, so _smt_load64(block + 64) reads
+     * block[64] + 7 zero bytes = correct partial word. */
+    _smt_m[8] = _smt_load64(block + 64);
+    _smt_m[9] = 0; _smt_m[10] = 0; _smt_m[11] = 0;
+    _smt_m[12] = 0; _smt_m[13] = 0; _smt_m[14] = 0; _smt_m[15] = 0;
+    _smt_v[0] = h[0]; _smt_v[1] = h[1]; _smt_v[2] = h[2]; _smt_v[3] = h[3];
+    _smt_v[4] = h[4]; _smt_v[5] = h[5]; _smt_v[6] = h[6]; _smt_v[7] = h[7];
+    _smt_v[8] = _smt_blake2b_IV[0];
+    _smt_v[9] = _smt_blake2b_IV[1];
+    _smt_v[10] = _smt_blake2b_IV[2];
+    _smt_v[11] = _smt_blake2b_IV[3];
+    _smt_v[12] = _smt_blake2b_IV[4] ^ 65;
+    _smt_v[13] = _smt_blake2b_IV[5];
+    _smt_v[14] = _smt_blake2b_IV[6] ^ (uint64_t)-1;
+    _smt_v[15] = _smt_blake2b_IV[7];
+    _SMT_ROUND(0);  _SMT_ROUND(1);  _SMT_ROUND(2);  _SMT_ROUND(3);
+    _SMT_ROUND(4);  _SMT_ROUND(5);  _SMT_ROUND(6);  _SMT_ROUND(7);
+    _SMT_ROUND(8);  _SMT_ROUND(9);  _SMT_ROUND(10); _SMT_ROUND(11);
+    u64 *o = (u64 *)out;
+    o[0] = h[0] ^ _smt_v[0] ^ _smt_v[8];
+    o[1] = h[1] ^ _smt_v[1] ^ _smt_v[9];
+    o[2] = h[2] ^ _smt_v[2] ^ _smt_v[10];
+    o[3] = h[3] ^ _smt_v[3] ^ _smt_v[11];
+  } else if (datalen == 66) {
+    /* 1 + 32 + 32 + 1 = 66 bytes */
+    _smt_m[0] = _smt_load64(block + 0);
+    _smt_m[1] = _smt_load64(block + 8);
+    _smt_m[2] = _smt_load64(block + 16);
+    _smt_m[3] = _smt_load64(block + 24);
+    _smt_m[4] = _smt_load64(block + 32);
+    _smt_m[5] = _smt_load64(block + 40);
+    _smt_m[6] = _smt_load64(block + 48);
+    _smt_m[7] = _smt_load64(block + 56);
+    /* block[64] = value[31], block[65] = zero_count, bytes 66-71 zeroed.
+     * _smt_load64(block + 64) reads block[64..71] correctly. */
+    _smt_m[8] = _smt_load64(block + 64);
+    _smt_m[9] = 0; _smt_m[10] = 0; _smt_m[11] = 0;
+    _smt_m[12] = 0; _smt_m[13] = 0; _smt_m[14] = 0; _smt_m[15] = 0;
+    _smt_v[0] = h[0]; _smt_v[1] = h[1]; _smt_v[2] = h[2]; _smt_v[3] = h[3];
+    _smt_v[4] = h[4]; _smt_v[5] = h[5]; _smt_v[6] = h[6]; _smt_v[7] = h[7];
+    _smt_v[8] = _smt_blake2b_IV[0];
+    _smt_v[9] = _smt_blake2b_IV[1];
+    _smt_v[10] = _smt_blake2b_IV[2];
+    _smt_v[11] = _smt_blake2b_IV[3];
+    _smt_v[12] = _smt_blake2b_IV[4] ^ 66;
+    _smt_v[13] = _smt_blake2b_IV[5];
+    _smt_v[14] = _smt_blake2b_IV[6] ^ (uint64_t)-1;
+    _smt_v[15] = _smt_blake2b_IV[7];
+    _SMT_ROUND(0);  _SMT_ROUND(1);  _SMT_ROUND(2);  _SMT_ROUND(3);
+    _SMT_ROUND(4);  _SMT_ROUND(5);  _SMT_ROUND(6);  _SMT_ROUND(7);
+    _SMT_ROUND(8);  _SMT_ROUND(9);  _SMT_ROUND(10); _SMT_ROUND(11);
+    u64 *o = (u64 *)out;
+    o[0] = h[0] ^ _smt_v[0] ^ _smt_v[8];
+    o[1] = h[1] ^ _smt_v[1] ^ _smt_v[9];
+    o[2] = h[2] ^ _smt_v[2] ^ _smt_v[10];
+    o[3] = h[3] ^ _smt_v[3] ^ _smt_v[11];
+  } else {
+    /* 1 + 1 + 32 + 32 + 32 = 98 bytes */
+    _smt_m[0] = _smt_load64(block + 0);
+    _smt_m[1] = _smt_load64(block + 8);
+    _smt_m[2] = _smt_load64(block + 16);
+    _smt_m[3] = _smt_load64(block + 24);
+    _smt_m[4] = _smt_load64(block + 32);
+    _smt_m[5] = _smt_load64(block + 40);
+    _smt_m[6] = _smt_load64(block + 48);
+    _smt_m[7] = _smt_load64(block + 56);
+    _smt_m[8] = _smt_load64(block + 64);
+    _smt_m[9] = _smt_load64(block + 72);
+    _smt_m[10] = _smt_load64(block + 80);
+    _smt_m[11] = _smt_load64(block + 88);
+    /* block[96..97] initialized (partial word), bytes 98-127 zeroed.
+     * _smt_load64(block + 96) reads block[96..103] correctly. */
+    _smt_m[12] = _smt_load64(block + 96);
+    _smt_m[13] = 0; _smt_m[14] = 0; _smt_m[15] = 0;
+    _smt_v[0] = h[0]; _smt_v[1] = h[1]; _smt_v[2] = h[2]; _smt_v[3] = h[3];
+    _smt_v[4] = h[4]; _smt_v[5] = h[5]; _smt_v[6] = h[6]; _smt_v[7] = h[7];
+    _smt_v[8] = _smt_blake2b_IV[0];
+    _smt_v[9] = _smt_blake2b_IV[1];
+    _smt_v[10] = _smt_blake2b_IV[2];
+    _smt_v[11] = _smt_blake2b_IV[3];
+    _smt_v[12] = _smt_blake2b_IV[4] ^ 98;
+    _smt_v[13] = _smt_blake2b_IV[5];
+    _smt_v[14] = _smt_blake2b_IV[6] ^ (uint64_t)-1;
+    _smt_v[15] = _smt_blake2b_IV[7];
+    _SMT_ROUND(0);  _SMT_ROUND(1);  _SMT_ROUND(2);  _SMT_ROUND(3);
+    _SMT_ROUND(4);  _SMT_ROUND(5);  _SMT_ROUND(6);  _SMT_ROUND(7);
+    _SMT_ROUND(8);  _SMT_ROUND(9);  _SMT_ROUND(10); _SMT_ROUND(11);
+    u64 *o = (u64 *)out;
+    o[0] = h[0] ^ _smt_v[0] ^ _smt_v[8];
+    o[1] = h[1] ^ _smt_v[1] ^ _smt_v[9];
+    o[2] = h[2] ^ _smt_v[2] ^ _smt_v[10];
+    o[3] = h[3] ^ _smt_v[3] ^ _smt_v[11];
+  }
 }
 
 #undef _SMT_G

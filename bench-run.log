@@ -1,0 +1,61 @@
+cargo test --all --features std,smtc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+warning: the following packages contain code that will be rejected by a future version of Rust: criterion v0.2.11
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/debug/deps/sparse_merkle_tree-144cc39e627f902d)
+
+running 44 tests
+test tests::fixtures::test_gen_fixtures ... ignored
+test tests::smt::test_ckb_smt_verify1 ... ok
+test tests::smt::test_ckb_smt_verify2 ... ok
+test tests::smt::test_ckb_smt_verify3 ... ok
+test tests::tree::test_default_merkle_proof ... ok
+test tests::smt::test_ckb_smt_verify_invalid ... ok
+test tests::tree::test_default_tree ... ok
+test tests::tree::test_default_root ... ok
+test tests::tree::test_delete_a_leaf ... ok
+test tests::tree::test_h256 ... ok
+test tests::tree::test_h256_copy_bits ... ok
+test tests::tree::test_sibling_key_get ... ok
+test tests::tree::test_sibling_leaf ... ok
+test tests::tree::test_replay_to_pass_proof ... ok
+test tests::tree::test_trie_broken_sample_02 ... ok
+test tests::tree::test_trie_broken_sample_03 ... ok
+test tests::tree::test_merkle_root ... ok
+test tests::tree::test_simple_non_exists_sub_proof ... ok
+test tests::tree::test_trie_broken_sample ... ok
+test tests::tree::test_zero_value_donot_change_root ... ok
+test tests::tree::test_v0_3_broken_sample ... ok
+test tests::tree::test_zero_value_donot_change_store ... ok
+test tests::tree::test_try_crash_compiled_merkle_proof ... ok
+test tests::tree::test_v0_2_broken_sample ... ok
+test tests::tree::test_smt_not_crash ... ok
+test tests::tree::test_random_update ... ok
+test tests::tree::test_random_update_tree_store ... ok
+test tests::tree::test_random_merkle_proof ... ok
+test tests::smt::test_random_merkle_proof ... ok
+test tests::tree::test_random_construct ... ok
+test tests::tree::test_update_smt_tree_store ... ok
+test tests::tree::test_from_store ... ok
+test tests::tree::test_smt_update_with_zero_values ... ok
+test tests::fixtures::test_fixtures ... ok
+test tests::tree::test_max_stack_size ... ok
+test tests::tree::test_zero_value_should_delete_branch ... ok
+test tests::tree::test_smt_update_all ... ok
+test tests::tree::test_smt_non_exists_leaves ... ok
+test tests::tree::test_smt_single_leaf_small ... ok
+test tests::tree::test_smt_non_existssss_leaves_mix ... ok
+test tests::tree::test_smt_single_leaf_large ... ok
+test tests::tree::test_smt_multi_leaves_small ... ok
+test tests::tree::test_smt_random_insert_order ... ok
+test tests::tree::test_smt_multi_leaves_large ... ok
+
+test result: ok. 43 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 24.00s
+
+   Doc-tests sparse_merkle_tree
+
+running 1 test
+test src/lib.rs - (line 5) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
