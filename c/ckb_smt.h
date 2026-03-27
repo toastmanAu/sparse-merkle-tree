@@ -450,25 +450,35 @@ _SMT_ALWAYS_INLINE int _smt_merge_value_is_zero(const _smt_merge_value_t *v) {
 const uint8_t _SMT_MERGE_NORMAL = 1;
 const uint8_t _SMT_MERGE_ZEROS = 2;
 
-/*
- * Precomputed blake2b_state for ckb_blake2b_init(S, 32).
- * This avoids re-computing the param block and XOR'ing with IV on every hash.
- * The state is: h[i] = blake2b_IV[i] ^ load64(P + i*8), where P is the
- * ckb-default-hash param block (digest_length=32, fanout=1, depth=1,
- * personal="ckb-default-hash").
- */
+/* Precomputed h[] values for ckb_blake2b_init(S, 32).
+ * Only h[] is non-trivial — rest of blake2b_state is zero/known. */
 static int _smt_blake2b_precomputed_initialized = 0;
-static blake2b_state _smt_blake2b_precomputed;
+static uint64_t _smt_blake2b_precomputed_h[8];
 
 static void _smt_blake2b_ensure_precomputed(void) {
   if (!_smt_blake2b_precomputed_initialized) {
-    ckb_blake2b_init(&_smt_blake2b_precomputed, SMT_VALUE_BYTES);
+    blake2b_state tmp;
+    ckb_blake2b_init(&tmp, SMT_VALUE_BYTES);
+    for (int i = 0; i < 8; i++) {
+      _smt_blake2b_precomputed_h[i] = tmp.h[i];
+    }
     _smt_blake2b_precomputed_initialized = 1;
   }
 }
 
-static void _smt_blake2b_init_fast(blake2b_state *S) {
-  _smt_fast_memcpy(S, &_smt_blake2b_precomputed, sizeof(blake2b_state));
+_SMT_ALWAYS_INLINE void _smt_blake2b_init_fast(blake2b_state *S) {
+  /* Copy only h[] from precomputed state, zero-init rest */
+  typedef uint64_t __attribute__((__may_alias__)) u64;
+  u64 *dst = (u64 *)S->h;
+  const u64 *src = (const u64 *)_smt_blake2b_precomputed_h;
+  dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+  dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
+  S->t[0] = 0; S->t[1] = 0;
+  S->f[0] = 0; S->f[1] = 0;
+  _smt_fast_memset(S->buf, 0, BLAKE2B_BLOCKBYTES);
+  S->buflen = 0;
+  S->outlen = SMT_VALUE_BYTES;
+  S->last_node = 0;
 }
 
 /* Hash base node into a H256 */
