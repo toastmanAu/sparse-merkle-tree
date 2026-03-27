@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 3195 K cycles (baseline: 6994, total improvement: 54.3%)
+## Current Best: 3072 K cycles (baseline: 6994, total improvement: 56.1%)
 
 ## Architecture Notes
 
@@ -41,12 +41,14 @@ This is the core verification function. It processes a proof (byte stream of opc
 9. **Specialized 32-byte memcmp** (exp 13): Saved 7 K cycles (0.2%). Small win with uint64_t XOR comparisons.
 10. **Optimize blake2b init - copy only h[] zero rest** (exp 14): Saved 324 K cycles (9.0%).
 11. **Skip buf[] zeroing in blake2b_init_fast** (exp 15): Saved 81 K cycles (2.5%). buf is filled by update and padded by final — initial zeroing is redundant.
+12. **Remove secure_zero_memory in blake2b_final** (exp 17): Saved 123 K cycles (3.8%). volatile memset ptr prevented compiler optimization — unnecessary for non-keyed SMT.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
 2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): +217 K cycles.
 3. **Force-inline blake2b_update/blake2b_final** (exp 10): No effect. Compiler already inlines them.
 4. **Specialized 32-byte memset-zero** (exp 12): +37 K cycles. The existing _smt_fast_memset is efficient for n<=32.
+5. **Field-by-field struct copy in _smt_merge_with_zero** (exp 16): No effect. Path not hit frequently enough.
 
 ## Ideas Backlog
 
@@ -68,6 +70,6 @@ This is the core verification function. It processes a proof (byte stream of opc
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
-| memory-layout | 5 | 4 | exp 15 - skip buf zeroing (2.5% win) |
+| memory-layout | 7 | 5 | exp 17 - remove secure_zero_memory (3.8% win) |
 | algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
 | compiler-hint | 3 | 2 | exp 10 - inline blake2b (no effect, discarded) |
