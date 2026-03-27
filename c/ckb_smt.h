@@ -589,18 +589,17 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         if (height > 255) {
           return ERROR_INVALID_PROOF;
         }
-        uint8_t parent_key[SMT_KEY_BYTES];
-        _smt_fast_memcpy(parent_key, key, SMT_KEY_BYTES);
-        _smt_parent_path(parent_key, height);
+        /* Read bit before parent_path clears it, then compute parent_path
+         * in-place — eliminates separate parent_key copy + second parent_path */
+        int bit = _smt_get_bit(key, height);
+        _smt_parent_path(key, height);
 
         // push value
-        if (_smt_get_bit(key, height)) {
-          _smt_merge((uint8_t)height, parent_key, &sibling_node, value, value);
+        if (bit) {
+          _smt_merge((uint8_t)height, key, &sibling_node, value, value);
         } else {
-          _smt_merge((uint8_t)height, parent_key, value, &sibling_node, value);
+          _smt_merge((uint8_t)height, key, value, &sibling_node, value);
         }
-        // push key
-        _smt_parent_path(key, height);
         // push height
         *height_ptr = height + 1;
       } break;
@@ -624,18 +623,16 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         if (height > 255) {
           return ERROR_INVALID_PROOF;
         }
-        uint8_t parent_key[SMT_KEY_BYTES];
-        _smt_fast_memcpy(parent_key, key, SMT_KEY_BYTES);
-        _smt_parent_path(parent_key, height);
+        /* Read bit before parent_path clears it, then compute in-place */
+        int bit = _smt_get_bit(key, height);
+        _smt_parent_path(key, height);
 
         // push value
-        if (_smt_get_bit(key, height)) {
-          _smt_merge((uint8_t)height, parent_key, &sibling_node, value, value);
+        if (bit) {
+          _smt_merge((uint8_t)height, key, &sibling_node, value, value);
         } else {
-          _smt_merge((uint8_t)height, parent_key, value, &sibling_node, value);
+          _smt_merge((uint8_t)height, key, value, &sibling_node, value);
         }
-        // push key
-        _smt_parent_path(key, height);
         // push height
         *height_ptr = height + 1;
       } break;
@@ -659,24 +656,23 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         if (height_a > 255) {
           return ERROR_INVALID_PROOF;
         }
-        uint8_t parent_key[SMT_KEY_BYTES];
-        _smt_fast_memcpy(parent_key, key_a, SMT_KEY_BYTES);
-        _smt_parent_path(parent_key, (uint8_t)height_a);
+        /* Read bit before parent_path clears it */
+        int bit = _smt_get_bit(key_a, height_a);
+        /* Compute parent_path in-place on both keys */
+        _smt_parent_path(key_a, (uint8_t)height_a);
+        _smt_parent_path(key_b, (uint8_t)height_b);
 
         // 2 keys should have same parent keys
-        _smt_parent_path(key_b, (uint8_t)height_b);
-        if (memcmp(parent_key, key_b, SMT_KEY_BYTES) != 0) {
+        if (memcmp(key_a, key_b, SMT_KEY_BYTES) != 0) {
           return ERROR_INVALID_PROOF;
         }
         // push value
-        if (_smt_get_bit(key_a, height_a)) {
-          _smt_merge(height_a, parent_key, value_b, value_a, value_a);
+        if (bit) {
+          _smt_merge(height_a, key_a, value_b, value_a, value_a);
         } else {
-          _smt_merge(height_a, parent_key, value_a, value_b, value_a);
+          _smt_merge(height_a, key_a, value_a, value_b, value_a);
         }
-        // push key
-        _smt_fast_memcpy(key_a, parent_key, SMT_KEY_BYTES);
-        // push height
+        // push height (key_a already has parent_path applied)
         *height_a_ptr = height_a + 1;
         stack_top++;
       } break;
