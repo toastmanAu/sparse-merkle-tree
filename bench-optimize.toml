@@ -4,7 +4,7 @@ workdir = "src/nostd-runner"
 metric_pattern = "verify\\(\\) costs: (\\d+) K cycles"
 metric_name = "verify_k_cycles"
 direction = "lower"
-timeout_seconds = 300
+timeout_seconds = 60
 
 [scope]
 editable = ["c/"]
@@ -14,5 +14,5 @@ branch_prefix = "bench-optimize"
 [experiment]
 tag = "mar27"
 max_consecutive_fails = 3
-baseline_runs = 3
-variance_threshold_pct = 0.5
+baseline_runs = 1
+variance_threshold_pct = 0
