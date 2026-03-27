@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 1819 K cycles (baseline: 6994, total improvement: 74.0%)
+## Current Best: 1703 K cycles (baseline: 6994, total improvement: 75.7%)
 
 ## Architecture Notes
 
@@ -52,6 +52,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 20. **Hash directly into out->value** (exp 31): Saved 2 K cycles (0.1%). Eliminated intermediate data[32] buffer and memcpy in _smt_merge normal path.
 21. **Short-circuit 0x4F loop** (exp 34): Saved 46 K cycles (2.3%). After first merge with zero, value is either ZERO or MERGE_WITH_ZERO. Skip _smt_merge dispatch overhead for remaining iterations — directly set bits and increment count.
 22. **Compute final parent_key directly in 0x4F** (exp 35): Saved 177 K cycles (8.9%)!! Replace N-1 expensive per-bit `_smt_clear_bit` calls (division/modulo for byte/bit pos) with single `_smt_parent_path` call at final height (byte-level `_smt_fast_memset`).
+23. **Inline blake2b helpers + per-datalen branches** (exp 36): Saved 116 K cycles (6.4%). Define local `_smt_load64`/`_smt_rotr64`/`_smt_blake2b_sigma` in `ckb_smt.h` for self-contained header. Restructure `_smt_blake2b_hash_block` with explicit per-datalen branches (65/66/98) instead of a loop with conditional loading, eliminating loop overhead and enabling better RISC-V optimization.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -89,5 +90,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 11 | 5 | exp 33 - specialized 66-byte copy (regressed +0.2%) |
-| algorithm | 15 | 13 | exp 35 - compute final parent_key directly in 0x4F (kept, -8.9%) |
+| algorithm | 16 | 14 | exp 36 - inline blake2b helpers + per-datalen branches (kept, -6.4%) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
