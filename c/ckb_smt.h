@@ -466,63 +466,101 @@ static void _smt_blake2b_ensure_precomputed(void) {
   }
 }
 
-_SMT_ALWAYS_INLINE void _smt_blake2b_init_fast(blake2b_state *S) {
-  /* Copy only h[] from precomputed state, zero-init rest */
+/* Fused single-block blake2b hash for SMT.
+ * All SMT hashes are single-block (<128 bytes). This function eliminates the
+ * blake2b_state struct entirely, working with local variables only.
+ * Takes a pre-filled+padded 128-byte block, the data length, and output buffer.
+ * Precomputed h[] + known constants for t/f are baked in directly. */
+#define _SMT_G(r, i, a, b, c, d)                          \
+  do {                                                     \
+    a = a + b + _smt_m[blake2b_sigma[r][2 * i + 0]];      \
+    d = rotr64(d ^ a, 32);                                 \
+    c = c + d;                                             \
+    b = rotr64(b ^ c, 24);                                 \
+    a = a + b + _smt_m[blake2b_sigma[r][2 * i + 1]];      \
+    d = rotr64(d ^ a, 16);                                 \
+    c = c + d;                                             \
+    b = rotr64(b ^ c, 63);                                 \
+  } while (0)
+
+#define _SMT_ROUND(r)                                \
+  do {                                               \
+    _SMT_G(r, 0, v[0], v[4], v[8], v[12]);           \
+    _SMT_G(r, 1, v[1], v[5], v[9], v[13]);           \
+    _SMT_G(r, 2, v[2], v[6], v[10], v[14]);          \
+    _SMT_G(r, 3, v[3], v[7], v[11], v[15]);          \
+    _SMT_G(r, 4, v[0], v[5], v[10], v[15]);          \
+    _SMT_G(r, 5, v[1], v[6], v[11], v[12]);          \
+    _SMT_G(r, 6, v[2], v[7], v[8], v[13]);           \
+    _SMT_G(r, 7, v[3], v[4], v[9], v[14]);           \
+  } while (0)
+
+_SMT_ALWAYS_INLINE void _smt_blake2b_hash_block(
+    const uint8_t block[BLAKE2B_BLOCKBYTES],
+    uint64_t datalen,
+    uint8_t out[SMT_VALUE_BYTES]) {
   typedef uint64_t __attribute__((__may_alias__)) u64;
-  u64 *dst = (u64 *)S->h;
-  const u64 *src = (const u64 *)_smt_blake2b_precomputed_h;
-  dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
-  dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
-  S->t[0] = 0; S->t[1] = 0;
-  S->f[0] = 0; S->f[1] = 0;
-  /* buf[] zeroing skipped: blake2b_update fills from 0, and _smt_blake2b_final
-   * pads unused bytes with zeros before compress. Initial zeroing is redundant. */
-  S->buflen = 0;
-  /* outlen and last_node not needed: _smt_blake2b_final doesn't use them */
+
+  /* Load message words from block */
+  uint64_t _smt_m[16];
+  for (int i = 0; i < 16; ++i) {
+    _smt_m[i] = load64(block + i * 8);
+  }
+
+  /* Set up working vector v[16] directly from precomputed h[] and IV.
+   * No blake2b_state struct needed. */
+  uint64_t v[16];
+  const uint64_t *h = _smt_blake2b_precomputed_h;
+  v[0] = h[0]; v[1] = h[1]; v[2] = h[2]; v[3] = h[3];
+  v[4] = h[4]; v[5] = h[5]; v[6] = h[6]; v[7] = h[7];
+  v[8]  = blake2b_IV[0];
+  v[9]  = blake2b_IV[1];
+  v[10] = blake2b_IV[2];
+  v[11] = blake2b_IV[3];
+  v[12] = blake2b_IV[4] ^ datalen;  /* t[0] = datalen */
+  v[13] = blake2b_IV[5];            /* t[1] = 0 */
+  v[14] = blake2b_IV[6] ^ (uint64_t)-1;  /* f[0] = -1 (last block) */
+  v[15] = blake2b_IV[7];            /* f[1] = 0 (no last_node) */
+
+  /* 12 rounds of mixing */
+  _SMT_ROUND(0);  _SMT_ROUND(1);  _SMT_ROUND(2);  _SMT_ROUND(3);
+  _SMT_ROUND(4);  _SMT_ROUND(5);  _SMT_ROUND(6);  _SMT_ROUND(7);
+  _SMT_ROUND(8);  _SMT_ROUND(9);  _SMT_ROUND(10); _SMT_ROUND(11);
+
+  /* Extract first 32 bytes (4 uint64) directly to output */
+  u64 *o = (u64 *)out;
+  o[0] = h[0] ^ v[0] ^ v[8];
+  o[1] = h[1] ^ v[1] ^ v[9];
+  o[2] = h[2] ^ v[2] ^ v[10];
+  o[3] = h[3] ^ v[3] ^ v[11];
 }
 
-/* Specialized blake2b final for SMT: skips error checks, NULL checks,
- * is_lastblock check, last_node check. Outputs exactly 32 bytes (4 uint64). */
-_SMT_ALWAYS_INLINE void _smt_blake2b_final(blake2b_state *S, uint8_t out[SMT_VALUE_BYTES]) {
-  typedef uint64_t __attribute__((__may_alias__)) u64;
-  S->t[0] += S->buflen;
-  /* S->t[1] += (S->t[0] < S->buflen); -- skip: t[0] never overflows for <128 byte inputs */
-  S->f[0] = (uint64_t)-1;  /* set lastblock; last_node is always 0 */
-  _smt_fast_memset(S->buf + S->buflen, 0, BLAKE2B_BLOCKBYTES - S->buflen);
-  blake2b_compress(S, S->buf);
-  /* Write first 4 h[] values (32 bytes) directly to output */
-  u64 *o = (u64 *)out;
-  o[0] = S->h[0]; o[1] = S->h[1]; o[2] = S->h[2]; o[3] = S->h[3];
-}
+#undef _SMT_G
+#undef _SMT_ROUND
 
 /* Hash base node into a H256 */
 static inline void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_key,
                          const uint8_t *base_value,
                          uint8_t out[SMT_VALUE_BYTES]) {
-  blake2b_state blake2b_ctx;
-  _smt_blake2b_init_fast(&blake2b_ctx);
-
-  /* Write data directly to blake2b buf instead of 3 blake2b_update calls.
-   * Total = 1 + 32 + 32 = 65 bytes, always < 128, so no compress needed. */
-  blake2b_ctx.buf[0] = base_height;
-  _smt_memcpy32(blake2b_ctx.buf + 1, base_key);
-  _smt_memcpy32(blake2b_ctx.buf + 33, base_value);
-  blake2b_ctx.buflen = 65;
-  _smt_blake2b_final(&blake2b_ctx, out);
+  /* Total = 1 + 32 + 32 = 65 bytes, pad rest with zeros */
+  uint8_t block[BLAKE2B_BLOCKBYTES];
+  block[0] = base_height;
+  _smt_memcpy32(block + 1, base_key);
+  _smt_memcpy32(block + 33, base_value);
+  _smt_fast_memset(block + 65, 0, BLAKE2B_BLOCKBYTES - 65);
+  _smt_blake2b_hash_block(block, 65, out);
 }
 
 static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
   if (v->t == _SMT_MERGE_VALUE_MERGE_WITH_ZERO) {
-    blake2b_state blake2b_ctx;
-    _smt_blake2b_init_fast(&blake2b_ctx);
-
-    /* Write data directly to buf: _SMT_MERGE_ZEROS(1) + value(32) + zero_bits(32) + zero_count(1) = 66 bytes */
-    blake2b_ctx.buf[0] = _SMT_MERGE_ZEROS;
-    _smt_memcpy32(blake2b_ctx.buf + 1, v->value);
-    _smt_memcpy32(blake2b_ctx.buf + 33, v->zero_bits);
-    blake2b_ctx.buf[65] = v->zero_count;
-    blake2b_ctx.buflen = 66;
-    _smt_blake2b_final(&blake2b_ctx, out);
+    /* Total = 1 + 32 + 32 + 1 = 66 bytes, pad rest with zeros */
+    uint8_t block[BLAKE2B_BLOCKBYTES];
+    block[0] = _SMT_MERGE_ZEROS;
+    _smt_memcpy32(block + 1, v->value);
+    _smt_memcpy32(block + 33, v->zero_bits);
+    block[65] = v->zero_count;
+    _smt_fast_memset(block + 66, 0, BLAKE2B_BLOCKBYTES - 66);
+    _smt_blake2b_hash_block(block, 66, out);
   } else {
     _smt_memcpy32(out, v->value);
   }
@@ -571,20 +609,18 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
     return;
   }
 
-  blake2b_state blake2b_ctx;
-  _smt_blake2b_init_fast(&blake2b_ctx);
-
-  /* Write data directly to buf: MERGE_NORMAL(1) + height(1) + node_key(32) + lhs_hash(32) + rhs_hash(32) = 98 bytes.
-   * _smt_merge_value_hash writes directly to target buf positions. */
-  blake2b_ctx.buf[0] = _SMT_MERGE_NORMAL;
-  blake2b_ctx.buf[1] = height;
-  _smt_memcpy32(blake2b_ctx.buf + 2, node_key);
-  _smt_merge_value_hash(lhs, blake2b_ctx.buf + 34);
-  _smt_merge_value_hash(rhs, blake2b_ctx.buf + 66);
-  blake2b_ctx.buflen = 98;
+  /* Write data directly to block: MERGE_NORMAL(1) + height(1) + node_key(32) + lhs_hash(32) + rhs_hash(32) = 98 bytes.
+   * _smt_merge_value_hash writes directly to target block positions. */
+  uint8_t block[BLAKE2B_BLOCKBYTES];
+  block[0] = _SMT_MERGE_NORMAL;
+  block[1] = height;
+  _smt_memcpy32(block + 2, node_key);
+  _smt_merge_value_hash(lhs, block + 34);
+  _smt_merge_value_hash(rhs, block + 66);
+  _smt_fast_memset(block + 98, 0, BLAKE2B_BLOCKBYTES - 98);
 
   uint8_t data[SMT_VALUE_BYTES];
-  _smt_blake2b_final(&blake2b_ctx, data);
+  _smt_blake2b_hash_block(block, 98, data);
   _smt_merge_value_from_h256(data, out);
 }
 
