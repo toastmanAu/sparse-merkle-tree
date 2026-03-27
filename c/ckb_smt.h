@@ -340,6 +340,7 @@ void smt_state_normalize(smt_state_t *state) {
 /* SMT */
 
 #define _SMT_ALWAYS_INLINE static inline __attribute__((always_inline))
+#define _SMT_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
 _SMT_ALWAYS_INLINE int _smt_get_bit(const uint8_t *data, int offset) {
   int byte_pos = offset / 8;
@@ -559,10 +560,10 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
   while (proof_index < proof_length) {
     switch (proof[proof_index++]) {
       case 0x4C: {
-        if (stack_top >= SMT_STACK_SIZE) {
+        if (_SMT_UNLIKELY(stack_top >= SMT_STACK_SIZE)) {
           return ERROR_INVALID_STACK;
         }
-        if (leave_index >= pairs->len) {
+        if (_SMT_UNLIKELY(leave_index >= pairs->len)) {
           return ERROR_INVALID_PROOF;
         }
         _smt_fast_memcpy(stack_keys[stack_top], pairs->pairs[leave_index].key,
@@ -573,10 +574,10 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         leave_index++;
       } break;
       case 0x50: {
-        if (stack_top == 0) {
+        if (_SMT_UNLIKELY(stack_top == 0)) {
           return ERROR_INVALID_STACK;
         }
-        if (proof_index + 32 > proof_length) {
+        if (_SMT_UNLIKELY(proof_index + 32 > proof_length)) {
           return ERROR_INVALID_PROOF;
         }
         _smt_merge_value_t sibling_node;
@@ -586,7 +587,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         _smt_merge_value_t *value = &stack_values[stack_top - 1];
         uint16_t height = stack_heights[stack_top - 1];
         uint16_t *height_ptr = &stack_heights[stack_top - 1];
-        if (height > 255) {
+        if (_SMT_UNLIKELY(height > 255)) {
           return ERROR_INVALID_PROOF;
         }
         /* Read bit before parent_path clears it, then compute parent_path
@@ -604,10 +605,10 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         *height_ptr = height + 1;
       } break;
       case 0x51: {
-        if (stack_top == 0) {
+        if (_SMT_UNLIKELY(stack_top == 0)) {
           return ERROR_INVALID_STACK;
         }
-        if (proof_index + 65 > proof_length) {
+        if (_SMT_UNLIKELY(proof_index + 65 > proof_length)) {
           return ERROR_INVALID_PROOF;
         }
         _smt_merge_value_t sibling_node;
@@ -620,7 +621,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         _smt_merge_value_t *value = &stack_values[stack_top - 1];
         uint16_t height = stack_heights[stack_top - 1];
         uint16_t *height_ptr = &stack_heights[stack_top - 1];
-        if (height > 255) {
+        if (_SMT_UNLIKELY(height > 255)) {
           return ERROR_INVALID_PROOF;
         }
         /* Read bit before parent_path clears it, then compute in-place */
@@ -637,7 +638,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         *height_ptr = height + 1;
       } break;
       case 0x48: {
-        if (stack_top < 2) {
+        if (_SMT_UNLIKELY(stack_top < 2)) {
           return ERROR_INVALID_STACK;
         }
         uint16_t *height_a_ptr = &stack_heights[stack_top - 2];
@@ -650,10 +651,10 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         uint8_t *key_b = stack_keys[stack_top - 1];
         _smt_merge_value_t *value_b = &stack_values[stack_top - 1];
         stack_top -= 2;
-        if (height_a != height_b) {
+        if (_SMT_UNLIKELY(height_a != height_b)) {
           return ERROR_INVALID_PROOF;
         }
-        if (height_a > 255) {
+        if (_SMT_UNLIKELY(height_a > 255)) {
           return ERROR_INVALID_PROOF;
         }
         /* Read bit before parent_path clears it */
@@ -663,7 +664,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         _smt_parent_path(key_b, (uint8_t)height_b);
 
         // 2 keys should have same parent keys
-        if (memcmp(key_a, key_b, SMT_KEY_BYTES) != 0) {
+        if (_SMT_UNLIKELY(memcmp(key_a, key_b, SMT_KEY_BYTES) != 0)) {
           return ERROR_INVALID_PROOF;
         }
         // push value
@@ -677,10 +678,10 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         stack_top++;
       } break;
       case 0x4F: {
-        if (stack_top < 1) {
+        if (_SMT_UNLIKELY(stack_top < 1)) {
           return ERROR_INVALID_STACK;
         }
-        if (proof_index >= proof_length) {
+        if (_SMT_UNLIKELY(proof_index >= proof_length)) {
           return ERROR_INVALID_PROOF;
         }
         uint16_t n = proof[proof_index];
@@ -695,7 +696,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         uint16_t base_height = stack_heights[stack_top - 1];
         uint8_t *key = stack_keys[stack_top - 1];
         _smt_merge_value_t *value = &stack_values[stack_top - 1];
-        if (base_height > 255) {
+        if (_SMT_UNLIKELY(base_height > 255)) {
           return ERROR_INVALID_PROOF;
         }
         uint8_t parent_key[SMT_KEY_BYTES];
@@ -704,7 +705,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         /* First iteration: full parent_path to set up initial state */
         if (zero_count > 0) {
           height_u16 = base_height;
-          if (height_u16 > 255) {
+          if (_SMT_UNLIKELY(height_u16 > 255)) {
             return ERROR_INVALID_PROOF;
           }
           _smt_parent_path(parent_key, (uint8_t)height_u16);
@@ -717,7 +718,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         /* Subsequent iterations: incremental — just clear one more bit */
         for (uint16_t idx = 1; idx < zero_count; idx++) {
           height_u16 = base_height + idx;
-          if (height_u16 > 255) {
+          if (_SMT_UNLIKELY(height_u16 > 255)) {
             return ERROR_INVALID_PROOF;
           }
           /* Incremental: parent_path(h) clears bits 0..h, keeping h+1..255.
