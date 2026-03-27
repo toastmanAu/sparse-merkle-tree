@@ -560,16 +560,17 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
 
   blake2b_state blake2b_ctx;
   _smt_blake2b_init_fast(&blake2b_ctx);
+
+  /* Write data directly to buf: MERGE_NORMAL(1) + height(1) + node_key(32) + lhs_hash(32) + rhs_hash(32) = 98 bytes.
+   * _smt_merge_value_hash writes directly to target buf positions. */
+  blake2b_ctx.buf[0] = _SMT_MERGE_NORMAL;
+  blake2b_ctx.buf[1] = height;
+  _smt_memcpy32(blake2b_ctx.buf + 2, node_key);
+  _smt_merge_value_hash(lhs, blake2b_ctx.buf + 34);
+  _smt_merge_value_hash(rhs, blake2b_ctx.buf + 66);
+  blake2b_ctx.buflen = 98;
+
   uint8_t data[SMT_VALUE_BYTES];
-
-  blake2b_update(&blake2b_ctx, &_SMT_MERGE_NORMAL, 1);
-  blake2b_update(&blake2b_ctx, &height, 1);
-  blake2b_update(&blake2b_ctx, node_key, SMT_KEY_BYTES);
-  _smt_merge_value_hash(lhs, data);
-  blake2b_update(&blake2b_ctx, data, SMT_VALUE_BYTES);
-  _smt_merge_value_hash(rhs, data);
-  blake2b_update(&blake2b_ctx, data, SMT_VALUE_BYTES);
-
   blake2b_final(&blake2b_ctx, data, SMT_VALUE_BYTES);
   _smt_merge_value_from_h256(data, out);
 }
