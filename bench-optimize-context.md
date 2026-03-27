@@ -31,25 +31,25 @@ This is the core verification function. It processes a proof (byte stream of opc
 1. **Precomputed blake2b init state** (exp 1): Saved 253 K cycles (3.6%). Memcpy of precomputed state replaces ckb_blake2b_init() calls. Confirms blake2b init overhead was significant.
 
 ## What Doesn't Work
-(None yet)
+1. **Batching small blake2b updates into contiguous buffers** (exp 2): 6772 vs 6741 (+31 K cycles). The extra memcpy cost to build the batch buffer outweighs the saved per-update overhead. blake2b_update is already efficient for small inputs since data < 128 bytes never triggers compression — it just copies into the internal buffer.
 
 ## Ideas Backlog
 
-### High Impact (blake2b optimization)
-1. **Combine small blake2b_updates into single buffer**: Many hash calls do 3-4 small updates (1 byte + 32 bytes + 32 bytes + ...). Buffer these and do a single update to avoid per-update overhead and buffer management.
-2. **Batch hash inputs for _smt_merge**: In `_smt_merge()`, we do blake2b(MERGE_NORMAL(1) + height(1) + node_key(32) + lhs_hash(32) + rhs_hash(32)) = 98 bytes total. Build this in a contiguous buffer and do a single blake2b_update.
-3. **Similar batching for _smt_hash_base_node**: height(1) + key(32) + value(32) = 65 bytes in one update.
-4. **Similar batching for _smt_merge_value_hash**: MERGE_ZEROS(1) + value(32) + zero_bits(32) + zero_count(1) = 66 bytes in one update.
+### High Impact (algorithmic / memory)
+1. **Optimize `_smt_parent_path()`**: Called frequently. The `_smt_copy_bits()` inside it does byte-by-byte bit clearing which could be done more efficiently with word-level ops.
+2. **Optimize `_smt_is_zero_hash()`**: Use 64-bit word comparisons instead of byte-by-byte loop.
+3. **Optimize `_smt_copy_bits()`**: Clear bits below a threshold using word-sized operations instead of per-bit loop.
 
-### Medium Impact (algorithmic)
-5. **Optimize `_smt_parent_path()`**: Called frequently. The `_smt_copy_bits()` inside it does byte-by-byte bit clearing which could be done more efficiently with word-level ops.
-6. **Optimize `_smt_is_zero_hash()`**: Use 64-bit word comparisons instead of byte-by-byte loop.
+### Medium Impact (compiler hints)
+4. **Force function inlining**: Add `__attribute__((always_inline))` to hot path functions like `_smt_merge`, `_smt_merge_with_zero`, `_smt_merge_value_hash`, `_smt_get_bit`, etc.
+5. **Mark hot/cold paths**: Use `__builtin_expect` for unlikely error paths.
 
 ### Lower Impact (memory/micro)
-7. **Reduce stack size**: `SMT_STACK_SIZE=257` might be larger than needed for 40 leaves. Smaller stack = better cache behavior.
-8. **Force function inlining**: Add `__attribute__((always_inline))` to hot path functions.
+6. **Reduce stack size**: `SMT_STACK_SIZE=257` might be larger than needed for 40 leaves. Smaller stack = better cache behavior.
+7. **Optimize `_smt_fast_memcpy` for 32-byte fixed-size copies**: Use specialized 32-byte copy using 64-bit loads/stores.
 
 ## Approach Categories Tried
 | Category | Attempts | Kept | Last Tried |
 |----------|----------|------|------------|
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
+| io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
