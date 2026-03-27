@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 4342 K cycles (baseline: 6994, total improvement: 37.9%)
+## Current Best: 4218 K cycles (baseline: 6994, total improvement: 39.7%)
 
 ## Architecture Notes
 
@@ -20,40 +20,41 @@ This is the core verification function. It processes a proof (byte stream of opc
 4. Most merges call `_smt_merge_with_zero()` which either extends a MergeWithZero or hashes a base node
 5. Blake2b is the dominant cost — each hash = init + multiple updates + final
 
-### blake2b Usage (the likely bottleneck)
-- `ckb_blake2b_init()`: Now replaced with precomputed state memcpy in SMT code
+### blake2b Usage
+- `ckb_blake2b_init()`: Replaced with precomputed state memcpy
 - Each hash: init(memcpy) + 2-4 updates(small) + final(compress+extract)
-- The blake2b_compress function itself (12 rounds of G mixing) is the irreducible core cost
+- The blake2b_compress function (12 rounds of G mixing) is the irreducible core cost
 
 ### Memory Operations
-- `_smt_fast_memcpy` / `_smt_fast_memset`: Custom musl-based implementations. Handle 32-byte key/value copies frequently.
-- Stack arrays: `stack_keys[257][32]`, `stack_values[257]` (each ~97 bytes), `stack_heights[257]` — significant stack usage
+- `_smt_fast_memcpy` / `_smt_fast_memset`: Custom musl-based implementations
+- Stack arrays: `stack_keys[257][32]`, `stack_values[257]` (each ~97 bytes), `stack_heights[257]`
 
 ## What Works
-1. **Precomputed blake2b init state** (exp 1): Saved 253 K cycles (3.6%). Memcpy of precomputed state replaces ckb_blake2b_init() calls.
-2. **64-bit word comparisons in `_smt_is_zero_hash`** (exp 3): Saved 4 K cycles (0.1%). Small but simplifies code.
-3. **Single byte mask in `_smt_copy_bits`** (exp 4): Saved 627 K cycles (9.3%)! Replaced per-bit clearing loop with single AND mask.
-4. **Force inlining `_smt_merge_with_zero` and `_smt_merge`** (exp 6): Saved 1064 K cycles (17.4%)! Massive win. Function call overhead on RISC-V is expensive.
-5. **Incremental parent_path in 0x4F loop** (exp 7): Saved 704 K cycles (13.9%)! Replaced full `_smt_parent_path` call per iteration with single `_smt_clear_bit`. Since heights increase monotonically, each iteration only needs to clear one additional bit.
+1. **Precomputed blake2b init state** (exp 1): Saved 253 K cycles (3.6%).
+2. **64-bit word comparisons in `_smt_is_zero_hash`** (exp 3): Saved 4 K cycles (0.1%).
+3. **Single byte mask in `_smt_copy_bits`** (exp 4): Saved 627 K cycles (9.3%)!
+4. **Force inlining `_smt_merge_with_zero` and `_smt_merge`** (exp 6): Saved 1064 K cycles (17.4%)!
+5. **Incremental parent_path in 0x4F loop** (exp 7): Saved 704 K cycles (13.9%)!
+6. **Eliminate redundant parent_key in 0x50/0x51/0x48** (exp 8): Saved 124 K cycles (2.9%). Compute parent_path in-place on key instead of copy→compute→copy-back pattern.
 
 ## What Doesn't Work
-1. **Batching small blake2b updates into contiguous buffers** (exp 2): +31 K cycles. blake2b_update is already efficient for small inputs.
-2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): +217 K cycles. Loop-based word zeroing slower than `_smt_fast_memset`.
+1. **Batching small blake2b updates** (exp 2): +31 K cycles.
+2. **64-bit word zeroing in `_smt_parent_path`** (exp 5): +217 K cycles.
 
 ## Ideas Backlog
 
 ### High Impact (algorithmic / memory)
-1. **Specialized 32-byte memcpy**: Use 4x uint64_t loads/stores for the very common 32-byte copy case instead of generic _smt_fast_memcpy.
-2. **Reduce redundant parent_key computation**: In opcodes 0x50/0x51, `_smt_parent_path` is called twice (once for parent_key, once for key). Could compute once and reuse (just memcpy parent_key to key).
-3. **Inline blake2b_update/blake2b_final**: Force-inline the blake2b functions. If they aren't already inlined, this could give a similar win to exp 6.
+1. **Inline blake2b_update/blake2b_final**: Force-inline the blake2b functions — could yield a win similar to exp 6.
+2. **Specialized 32-byte memcpy**: Use 4x uint64_t loads/stores for the very common 32-byte copy.
+3. **Reduce blake2b calls**: In `_smt_merge_with_zero`, when converting a VALUE to MERGE_WITH_ZERO for the first time, it calls `_smt_hash_base_node` which does a full blake2b hash. Can this be deferred?
 
 ### Medium Impact (compiler hints)
-4. **`__builtin_expect` for unlikely error paths**: Branch prediction hints to move error handling out of the hot path.
-5. **Optimize merge_with_zero fast path**: When extending a MergeWithZero (already has base_node), avoid the memcpy when out==v by restructuring the branch.
+4. **`__builtin_expect` for unlikely error paths**: Branch prediction hints.
+5. **Optimize `_smt_merge` zero-check fast path**: The inlined `_smt_merge` now checks lhs_zero/rhs_zero — since most calls have one zero operand, optimize the branch ordering.
 
 ### Lower Impact (memory/micro)
-6. **Reduce `SMT_STACK_SIZE`**: 257 might be larger than needed for 40 leaves. Smaller stack = less memory pressure.
-7. **Eliminate parent_key local variable**: In 0x50/0x51, compute parent_path in-place on key, then use key as parent_key for merge.
+6. **Reduce `SMT_STACK_SIZE`**: 257 might be larger than needed for 40 leaves.
+7. **Optimize 0x4F memcpy at end**: The final `_smt_fast_memcpy(key, parent_key, 32)` could be eliminated if we work on key directly (tricky since get_bit needs original).
 
 ## Approach Categories Tried
 | Category | Attempts | Kept | Last Tried |
@@ -61,5 +62,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 1 | 1 | exp 3 - 64-bit zero hash check |
-| algorithm | 3 | 2 | exp 7 - incremental parent_path (huge win) |
+| algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
 | compiler-hint | 1 | 1 | exp 6 - always_inline merge functions (huge win) |
