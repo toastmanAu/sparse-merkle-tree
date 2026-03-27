@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 4218 K cycles (baseline: 6994, total improvement: 39.7%)
+## Current Best: 4202 K cycles (baseline: 6994, total improvement: 39.9%)
 
 ## Architecture Notes
 
@@ -35,7 +35,8 @@ This is the core verification function. It processes a proof (byte stream of opc
 3. **Single byte mask in `_smt_copy_bits`** (exp 4): Saved 627 K cycles (9.3%)!
 4. **Force inlining `_smt_merge_with_zero` and `_smt_merge`** (exp 6): Saved 1064 K cycles (17.4%)!
 5. **Incremental parent_path in 0x4F loop** (exp 7): Saved 704 K cycles (13.9%)!
-6. **Eliminate redundant parent_key in 0x50/0x51/0x48** (exp 8): Saved 124 K cycles (2.9%). Compute parent_path in-place on key instead of copy→compute→copy-back pattern.
+6. **Eliminate redundant parent_key in 0x50/0x51/0x48** (exp 8): Saved 124 K cycles (2.9%).
+7. **`__builtin_expect` for unlikely error paths** (exp 9): Saved 16 K cycles (0.4%). Small but real.
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -63,4 +64,4 @@ This is the core verification function. It processes a proof (byte stream of opc
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 1 | 1 | exp 3 - 64-bit zero hash check |
 | algorithm | 4 | 3 | exp 8 - eliminate redundant parent_key (2.9% win) |
-| compiler-hint | 1 | 1 | exp 6 - always_inline merge functions (huge win) |
+| compiler-hint | 2 | 2 | exp 9 - __builtin_expect (0.4% win) |
