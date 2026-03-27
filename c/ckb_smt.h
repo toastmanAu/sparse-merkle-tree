@@ -396,6 +396,15 @@ _SMT_ALWAYS_INLINE int _smt_is_zero_hash(const uint8_t *value) {
   return (v64[0] | v64[1] | v64[2] | v64[3]) == 0;
 }
 
+/* Specialized 32-byte equality check using 64-bit comparisons */
+_SMT_ALWAYS_INLINE int _smt_equal32(const uint8_t *a, const uint8_t *b) {
+  typedef uint64_t __attribute__((__may_alias__)) u64;
+  const u64 *a64 = (const u64 *)a;
+  const u64 *b64 = (const u64 *)b;
+  return ((a64[0] ^ b64[0]) | (a64[1] ^ b64[1]) |
+          (a64[2] ^ b64[2]) | (a64[3] ^ b64[3])) == 0;
+}
+
 #define _SMT_MERGE_VALUE_ZERO 0
 #define _SMT_MERGE_VALUE_VALUE 1
 #define _SMT_MERGE_VALUE_MERGE_WITH_ZERO 2
@@ -676,7 +685,7 @@ int smt_calculate_root(uint8_t *buffer, const smt_state_t *pairs,
         _smt_parent_path(key_b, (uint8_t)height_b);
 
         // 2 keys should have same parent keys
-        if (_SMT_UNLIKELY(memcmp(key_a, key_b, SMT_KEY_BYTES) != 0)) {
+        if (_SMT_UNLIKELY(!_smt_equal32(key_a, key_b))) {
           return ERROR_INVALID_PROOF;
         }
         // push value
