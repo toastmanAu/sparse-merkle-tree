@@ -3,7 +3,7 @@
 ## Project Understanding
 Sparse Merkle Tree (SMT) library for CKB blockchain. The benchmark measures SMT proof verification cycles on the CKB RISC-V VM (ckb-debugger). The C implementation in `c/ckb_smt.h` is used via the `smtc` feature for on-chain verification. Test parameters: 131072 keys, 40 leaves, seed 42.
 
-## Current Best: 1996 K cycles (baseline: 6994, total improvement: 71.5%)
+## Current Best: 1819 K cycles (baseline: 6994, total improvement: 74.0%)
 
 ## Architecture Notes
 
@@ -51,6 +51,7 @@ This is the core verification function. It processes a proof (byte stream of opc
 19. **Skip zero check after blake2b hash** (exp 30): Saved 7 K cycles (0.3%). Blake2b hash output is cryptographically never zero — skip _smt_is_zero_hash check in _smt_merge normal path.
 20. **Hash directly into out->value** (exp 31): Saved 2 K cycles (0.1%). Eliminated intermediate data[32] buffer and memcpy in _smt_merge normal path.
 21. **Short-circuit 0x4F loop** (exp 34): Saved 46 K cycles (2.3%). After first merge with zero, value is either ZERO or MERGE_WITH_ZERO. Skip _smt_merge dispatch overhead for remaining iterations — directly set bits and increment count.
+22. **Compute final parent_key directly in 0x4F** (exp 35): Saved 177 K cycles (8.9%)!! Replace N-1 expensive per-bit `_smt_clear_bit` calls (division/modulo for byte/bit pos) with single `_smt_parent_path` call at final height (byte-level `_smt_fast_memset`).
 
 ## What Doesn't Work
 1. **Batching small blake2b updates** (exp 2): +31 K cycles.
@@ -88,5 +89,5 @@ This is the core verification function. It processes a proof (byte stream of opc
 | caching | 1 | 1 | exp 1 - precomputed blake2b init |
 | io-optimization | 1 | 0 | exp 2 - batch blake2b updates (regressed) |
 | memory-layout | 11 | 5 | exp 33 - specialized 66-byte copy (regressed +0.2%) |
-| algorithm | 14 | 12 | exp 34 - short-circuit 0x4F loop (kept, -2.3%) |
+| algorithm | 15 | 13 | exp 35 - compute final parent_key directly in 0x4F (kept, -8.9%) |
 | compiler-hint | 5 | 2 | exp 25 - force-inline blake2b_compress (no effect) |
