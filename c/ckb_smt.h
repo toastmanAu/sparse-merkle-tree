@@ -360,8 +360,10 @@ void _smt_clear_bit(uint8_t *data, int offset) {
 void _smt_copy_bits(uint8_t *source, int first_kept_bit) {
   int first_byte = first_kept_bit / 8;
   _smt_fast_memset(source, 0, first_byte);
-  for (int i = first_byte * 8; i < first_kept_bit; i++) {
-    _smt_clear_bit(source, i);
+  int bit_offset = first_kept_bit % 8;
+  if (bit_offset != 0) {
+    /* Clear bits 0..(bit_offset-1) in the partial byte, keep bits bit_offset..7 */
+    source[first_byte] &= (uint8_t)(0xFF << bit_offset);
   }
 }
 
