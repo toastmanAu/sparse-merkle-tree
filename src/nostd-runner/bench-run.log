@@ -2,12 +2,12 @@ RUSTFLAGS="-C target-feature=+zba,+zbb,+zbc,+zbs,-a -C debug-assertions" CLANG="
 	cargo build --target=riscv64imac-unknown-none-elf --release 
    Compiling sparse-merkle-tree v0.6.2 (/home/quake/workspace/sparse-merkle-tree)
    Compiling smt-nostd-runner v0.1.0 (/home/quake/workspace/sparse-merkle-tree/src/nostd-runner)
-    Finished `release` profile [optimized] target(s) in 1.39s
+    Finished `release` profile [optimized] target(s) in 1.36s
 proof=$(cargo run --features=rand,trie --manifest-path=/home/quake/workspace/sparse-merkle-tree/src/nostd-runner/../../Cargo.toml --bin generate-proof 131072 40 42 2>/dev/null); \
 ckb-debugger --bin /home/quake/workspace/sparse-merkle-tree/src/nostd-runner/target/riscv64imac-unknown-none-elf/release/smt-nostd-runner -- $proof
 Script log: [[32mINFO[0m  src/main.rs:19] smt-nostd-runner, log enabled
 Script log: [[32mINFO[0m  src/entry.rs:56] Input summary => proof length: 17646 bytes, pairs count: 40
-Script log: [[32mINFO[0m  src/entry.rs:69] SMT verify() costs: 2422 K cycles
+Script log: [[32mINFO[0m  src/entry.rs:69] SMT verify() costs: 2044 K cycles
 Script log: [[32mINFO[0m  src/entry.rs:72] SMT verification succeeded.
 Run result: 0
-All cycles: 7120087(6.8M)
+All cycles: 6741151(6.4M)

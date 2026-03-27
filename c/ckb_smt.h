@@ -640,9 +640,9 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
   _smt_merge_value_hash(rhs, block + 66);
   _smt_fast_memset(block + 98, 0, 103 - 98 + 1);  /* zero bytes 98-103 (partial word) */
 
-  uint8_t data[SMT_VALUE_BYTES];
-  _smt_blake2b_hash_block(block, 98, data);
-  _smt_merge_value_from_hash(data, out);
+  /* Hash directly into out->value, skip intermediate buffer */
+  out->t = _SMT_MERGE_VALUE_VALUE;
+  _smt_blake2b_hash_block(block, 98, out->value);
 }
 
 const _smt_merge_value_t SMT_ZERO = {
