@@ -1,0 +1,15 @@
+[package]
+name = "smt-nostd-runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-std = { version = "1.0", default-features = false, features = ["ckb-types", "allocator", "ckb-types", "dummy-atomic", "log"] }
+log = { version = "0.4", optional = true, default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"]}
+sparse-merkle-tree = { path="../../",default-features = false, features = ["with-blake2b-ref", "smtc"] }
+blake2b-ref = "0.3.1"
+
+[features]
+default = ["enable_log"]
+enable_log = ["log"]

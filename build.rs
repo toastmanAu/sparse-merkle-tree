@@ -32,7 +32,6 @@ fn main() {
 #[cfg(feature = "smtc")]
 fn setup_compiler_riscv(build: &mut cc::Build) {
     build
-        .static_flag(true)
         .flag("-fno-builtin-printf")
         .flag("-fno-builtin-memcmp")
         .flag("-nostdinc")
@@ -52,7 +51,6 @@ fn setup_compiler_riscv(build: &mut cc::Build) {
     build.compiler(clang);
 
     build
-        .no_default_flags(true)
         .flag("--target=riscv64")
         .flag("-march=rv64imc_zba_zbb_zbc_zbs");
 
@@ -71,7 +69,6 @@ fn setup_compiler_riscv(build: &mut cc::Build) {
 #[cfg(feature = "smtc")]
 fn setup_compiler_native(build: &mut cc::Build) {
     build
-        .static_flag(true)
         .flag("-O3")
         .flag("-fvisibility=hidden")
         .flag("-fdata-sections")

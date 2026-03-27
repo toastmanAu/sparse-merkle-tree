@@ -26,7 +26,7 @@ run-example: build-web
 
 install-tools:
 	which wasm-pack >/dev/null 2>&1 || cargo install wasm-pack
-	which ckb-debugger >/dev/null 2>&1 || cargo install ckb-debugger
+	which ckb-debugger >/dev/null 2>&1 || cargo install --locked ckb-debugger
 
 clean:
 	cargo clean
