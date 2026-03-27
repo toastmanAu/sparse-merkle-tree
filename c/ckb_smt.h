@@ -475,11 +475,24 @@ _SMT_ALWAYS_INLINE void _smt_blake2b_init_fast(blake2b_state *S) {
   dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
   S->t[0] = 0; S->t[1] = 0;
   S->f[0] = 0; S->f[1] = 0;
-  /* buf[] zeroing skipped: blake2b_update fills from 0, and blake2b_final
+  /* buf[] zeroing skipped: blake2b_update fills from 0, and _smt_blake2b_final
    * pads unused bytes with zeros before compress. Initial zeroing is redundant. */
   S->buflen = 0;
-  S->outlen = SMT_VALUE_BYTES;
-  S->last_node = 0;
+  /* outlen and last_node not needed: _smt_blake2b_final doesn't use them */
+}
+
+/* Specialized blake2b final for SMT: skips error checks, NULL checks,
+ * is_lastblock check, last_node check. Outputs exactly 32 bytes (4 uint64). */
+_SMT_ALWAYS_INLINE void _smt_blake2b_final(blake2b_state *S, uint8_t out[SMT_VALUE_BYTES]) {
+  typedef uint64_t __attribute__((__may_alias__)) u64;
+  S->t[0] += S->buflen;
+  /* S->t[1] += (S->t[0] < S->buflen); -- skip: t[0] never overflows for <128 byte inputs */
+  S->f[0] = (uint64_t)-1;  /* set lastblock; last_node is always 0 */
+  _smt_fast_memset(S->buf + S->buflen, 0, BLAKE2B_BLOCKBYTES - S->buflen);
+  blake2b_compress(S, S->buf);
+  /* Write first 4 h[] values (32 bytes) directly to output */
+  u64 *o = (u64 *)out;
+  o[0] = S->h[0]; o[1] = S->h[1]; o[2] = S->h[2]; o[3] = S->h[3];
 }
 
 /* Hash base node into a H256 */
@@ -495,7 +508,7 @@ static inline void _smt_hash_base_node(uint8_t base_height, const uint8_t *base_
   _smt_memcpy32(blake2b_ctx.buf + 1, base_key);
   _smt_memcpy32(blake2b_ctx.buf + 33, base_value);
   blake2b_ctx.buflen = 65;
-  blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
+  _smt_blake2b_final(&blake2b_ctx, out);
 }
 
 static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *out) {
@@ -509,7 +522,7 @@ static inline void _smt_merge_value_hash(const _smt_merge_value_t *v, uint8_t *o
     _smt_memcpy32(blake2b_ctx.buf + 33, v->zero_bits);
     blake2b_ctx.buf[65] = v->zero_count;
     blake2b_ctx.buflen = 66;
-    blake2b_final(&blake2b_ctx, out, SMT_VALUE_BYTES);
+    _smt_blake2b_final(&blake2b_ctx, out);
   } else {
     _smt_memcpy32(out, v->value);
   }
@@ -571,7 +584,7 @@ _SMT_ALWAYS_INLINE void _smt_merge(uint8_t height, const uint8_t *node_key,
   blake2b_ctx.buflen = 98;
 
   uint8_t data[SMT_VALUE_BYTES];
-  blake2b_final(&blake2b_ctx, data, SMT_VALUE_BYTES);
+  _smt_blake2b_final(&blake2b_ctx, data);
   _smt_merge_value_from_h256(data, out);
 }
 
